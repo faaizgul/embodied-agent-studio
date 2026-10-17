@@ -699,7 +699,7 @@ function buildMascot() {
 
   let t = 0;
   return {
-    kind: 'builtin', root, headY: 1.38, height: 1.66,
+    kind: 'builtin', root, headY: 1.38, height: 1.66, frameScale: 1.45,
     update(dt, f) {
       t += dt;
       const e = f.emotion;
@@ -851,9 +851,10 @@ function frame() {
   if (!avatar) return;
   const h = avatar.headY;
   let target, dist;
-  if (cfg.framing === 'face') { target = new THREE.Vector3(0, h, 0); dist = 1.05; }
-  else if (cfg.framing === 'full') { target = new THREE.Vector3(0, avatar.height * 0.52, 0); dist = (avatar.height * 0.62) / Math.tan(THREE.MathUtils.degToRad(15)); }
-  else { target = new THREE.Vector3(0, h - 0.22, 0); dist = 2.0; }
+  const k = avatar.frameScale || 1;
+  if (cfg.framing === 'face') { target = new THREE.Vector3(0, h - 0.02, 0); dist = 1.25 * k; }
+  else if (cfg.framing === 'full') { target = new THREE.Vector3(0, avatar.height * 0.5, 0); dist = (avatar.height * 0.72) / Math.tan(THREE.MathUtils.degToRad(15)); }
+  else { target = new THREE.Vector3(0, h - 0.22 * k, 0); dist = 2.0 * k; }
   controls.target.copy(target);
   camera.position.set(0, target.y + 0.04, dist);
   controls.update();
@@ -1051,16 +1052,23 @@ function parseReply(raw) {
   return { emotion, text };
 }
 
+const STOP = new Set('the and for are you your what when where which who how does did can could would should with from this that have has about there their them they into out our any some like just get got tell please want need know'.split(' '));
+const words = (t) => (t.toLowerCase().match(/[a-z\u0900-\u0dff]{3,}/g) || []).filter((w) => !STOP.has(w));
+const same = (a, b) => a === b || (a.length > 3 && b.length > 3 && a.slice(0, 4) === b.slice(0, 4));
+
 function rehearsalReply(userText) {
-  const words = new Set(userText.toLowerCase().match(/[a-zऀ-෿]{3,}/g) || []);
   if (/^(hi|hello|hey|namaste|hola)\b/i.test(userText.trim())) return `[happy] ${cfg.greeting}`;
+  const lines = (cfg.knowledge || '').split(/\n+/).map((l) => l.trim()).filter((l) => l && !/^example knowledge/i.test(l));
+  const lineWords = lines.map(words);
+  const q = [...new Set(words(userText))];
+  // Words that appear in many lines (like the subject's own name) count for less.
+  const weight = (w) => 1 / (1 + lineWords.filter((lw) => lw.some((x) => same(x, w))).length);
   let best = '', score = 0;
-  for (const line of (cfg.knowledge || '').split(/\n+/)) {
-    const lw = line.toLowerCase().match(/[a-zऀ-෿]{3,}/g) || [];
-    const s = lw.filter((w) => words.has(w)).length;
-    if (s > score) { score = s; best = line.replace(/^example knowledge.*$/i, '').trim(); }
-  }
-  if (best && score > 0) return `[neutral] ${best}`;
+  lines.forEach((line, i) => {
+    const s = q.filter((w) => lineWords[i].some((x) => same(x, w))).reduce((a, w) => a + weight(w), 0);
+    if (s > score) { score = s; best = line; }
+  });
+  if (best) return `[neutral] ${best}`;
   return '[thinking] I am in rehearsal mode, so I can only repeat what is in my knowledge box. Add a free API key in the Brain tab to make me think.';
 }
 
