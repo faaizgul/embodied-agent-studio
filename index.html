@@ -1334,7 +1334,7 @@ $('#export-demo').onclick = async () => {
     if (avatarSource) payload.avatar = { name: avatarSource.name, data: await blobToDataURL(avatarSource.blob) };
     const json = JSON.stringify(payload).replace(/</g, '\\u003c');
     const base = SOURCE_HTML.replace(/<script id="embedded-agent"[\s\S]*?<\/script>/, '');
-    const html = base.replace('</head>', `<script id="embedded-agent" type="application/json">${json}</script>\n</head>`);
+    const html = base.replace('</head>', `<script id="embedded-agent" type="application/json">${json}<\/script>\n</head>`);
     download(`${slug()}-demo.html`, new Blob([html], { type: 'text/html' }));
     log('stage', `Exported ${slug()}-demo.html (${(html.length / 1048576).toFixed(1)} MB)`);
   } catch (err) {
