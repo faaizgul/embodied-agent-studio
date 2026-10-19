@@ -988,7 +988,8 @@ async function buildRobot() {
   }
   if (!gltf) throw lastErr || new Error('Could not download the robot');
   const model = gltf.scene;
-  const box = new THREE.Box3().setFromObject(model);
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model, true); // precise: measures the posed, skinned mesh
   const s = 1.45 / (box.max.y - box.min.y);
   const root = new THREE.Group();
   model.scale.setScalar(s);
@@ -1018,7 +1019,8 @@ async function buildRobot() {
   const morph = (n, v) => { if (faceMesh) { const i = faceMesh.morphTargetDictionary[n]; if (i !== undefined) faceMesh.morphTargetInfluences[i] = v; } };
   let t = 0;
   const headRest = headBone ? headBone.quaternion.clone() : null;
-  const box2 = new THREE.Box3().setFromObject(root);
+  root.updateMatrixWorld(true);
+  const box2 = new THREE.Box3().setFromObject(root, true);
   return {
     kind: 'robot', label: 'Robot', root, headY: box2.max.y * 0.84, height: box2.max.y, frameScale: 1.35,
     update(dt, f) {
