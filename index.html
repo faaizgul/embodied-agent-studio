@@ -1421,10 +1421,93 @@ async function decodeAudio(audio) {
   for (let i = 0; i < samples.length; i++) ch[i] = samples[i] / 32768;
   return buf;
 }
+/* Streaming: play the first audio chunks while the rest is still being generated */
+let ttsStream = true; // switched off if the stream route fails for reasons other than limits
+let streamSources = [], streamAbort = null;
+function pcmToBuffer(ctx, bytes, rate) {
+  const n = Math.floor(bytes.length / 2);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, n * 2);
+  const buf = ctx.createBuffer(1, n, rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 32768;
+  return buf;
+}
+async function speakGeminiStream(text, style) {
+  const ctx = getAudio();
+  const key = keyFor('gemini');
+  if (!key) throw new VoiceError('No Gemini key yet.', 0);
+  streamAbort = new AbortController();
+  const t0 = performance.now();
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST', signal: streamAbort.signal,
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({
+      model: cfg.ttsModel || DEFAULTS.ttsModel,
+      stream: true,
+      input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }] }],
+      response_format: { type: 'audio', mime_type: 'audio/l16', sample_rate: 24000 },
+      generation_config: { speech_config: [{ voice: cfg.geminiVoice || 'Kore' }] },
+    }),
+  });
+  if (!res.ok || !res.body) throw await errorFrom(res);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let pending = '', carry = new Uint8Array(0), nextTime = 0, total = 0, first = true;
+  let lastEnded = Promise.resolve();
+  const schedule = (b64, mime) => {
+    let bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) bytes = bytes.subarray(44); // skip a WAV header
+    if (carry.length) { const m = new Uint8Array(carry.length + bytes.length); m.set(carry); m.set(bytes, carry.length); bytes = m; }
+    const even = bytes.length - (bytes.length % 2);
+    carry = bytes.slice(even);
+    if (!even || !speaking) return;
+    const rate = Number(((mime || '').match(/rate=(\d+)/) || [])[1]) || 24000;
+    const buf = pcmToBuffer(ctx, bytes.subarray(0, even), rate);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(analyser);
+    const start = Math.max(nextTime, ctx.currentTime + 0.04);
+    src.start(start);
+    nextTime = start + buf.duration;
+    total += buf.duration;
+    streamSources.push(src);
+    lastEnded = new Promise((r) => { src.onended = r; });
+    if (first) { first = false; audioSpeaking = true; log('voice', `Gemini voice ${cfg.geminiVoice} started after ${((performance.now() - t0) / 1000).toFixed(1)} s (streaming)`); }
+  };
+  const handleLine = (line) => {
+    line = line.trim();
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    try { const audio = findAudio(JSON.parse(payload)); if (audio) schedule(audio.data, audio.mime); } catch { /* skip partial events */ }
+  };
+  while (speaking) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += dec.decode(value, { stream: true });
+    let i;
+    while ((i = pending.indexOf('\n')) >= 0) { handleLine(pending.slice(0, i)); pending = pending.slice(i + 1); }
+  }
+  handleLine(pending);
+  if (first) throw new VoiceError('The voice stream had no audio.', 200);
+  await lastEnded;
+  streamSources = [];
+  audioSpeaking = false;
+}
+
 async function speakGemini(text, emotion) {
   const ctx = getAudio();
   if (ctx.state === 'suspended') await ctx.resume();
   const style = `${cfg.voiceStyle || ''} Emotion for this line: ${emotion === 'neutral' ? 'calm and friendly' : emotion}.`.trim();
+  if (ttsStream) {
+    try { await speakGeminiStream(text, style); return; }
+    catch (err) {
+      if (err.name === 'AbortError' || !speaking) return;
+      if (err.status === 429 || err.status === 401 || err.status === 403 || err.status === 0) throw err;
+      ttsStream = false;
+      log('voice', `Streaming voice not available (${err.message}). Waiting for the whole clip instead.`);
+    }
+  }
   const t0 = performance.now();
   const audio = await geminiTTS(text, style);
   const buf = await decodeAudio(audio);
@@ -1474,6 +1557,9 @@ function stopSpeaking() {
   if (hasTTS) speechSynthesis.cancel();
   if (currentSource) { try { currentSource.onended = null; currentSource.stop(); } catch { /* already stopped */ } currentSource = null; }
   if (currentDone) { const done = currentDone; currentDone = null; done(); }
+  if (streamAbort) { try { streamAbort.abort(); } catch { /* done */ } streamAbort = null; }
+  streamSources.forEach((src) => { try { src.onended?.(); src.onended = null; src.stop(); } catch { /* stopped */ } });
+  streamSources = [];
   speaking = false;
   audioSpeaking = false;
 }
