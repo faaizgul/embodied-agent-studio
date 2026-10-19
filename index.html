@@ -610,7 +610,7 @@ details > .guide, details > .lede { margin-top: 4px; }
             <label for="f-ttsmodel">Voice model</label>
             <input id="f-ttsmodel" type="text" data-cfg="ttsModel">
           </div>
-          <div class="note warn">Free voice limits are tight and change often. If the limit is reached, the agent switches to the browser voice for a minute and says so in the log.</div>
+          <div class="note warn">Natural, but slower: in our tests the Gemini voice added about 4 to 6 seconds before each reply. Free voice limits are tight and change often. If the limit is reached, the agent switches to the browser voice for a minute and says so in the log.</div>
         </div>
 
         <label class="row" style="gap:8px"><input id="f-autospeak" type="checkbox" data-cfg="autoSpeak"> Speak replies out loud</label>
@@ -887,6 +887,12 @@ function buildMascot() {
     return { shoulder, s };
   });
   const neck = add(root, new THREE.CylinderGeometry(0.055, 0.065, 0.14, 20), skinMat, [0, 1.15, 0]);
+  // Legs and shoes, so the agent stands on the floor (it matters in AR)
+  const legMat = mat(0x2b3140, 0.8), shoeMat = mat(0x1a1c22, 0.5);
+  for (const s of [1, -1]) {
+    add(root, new THREE.CapsuleGeometry(0.075, 0.36, 8, 16), legMat, [0.085 * s, 0.29, 0]);
+    add(root, new THREE.SphereGeometry(0.07, 18, 12), shoeMat, [0.085 * s, 0.045, 0.035], [0.85, 0.55, 1.35]);
+  }
 
   // Head
   const head = new THREE.Group();
@@ -1887,7 +1893,7 @@ async function converse(userText) {
     history.pop();
     setEmotion('concerned');
     showAgent(msg, true);
-    if (err.status === 0 && needsKey() && document.body.classList.contains('present')) openKeyDialog();
+    if (err.status === 0 && needsKey() && (document.body.classList.contains('present') || document.body.classList.contains('embed'))) openKeyDialog();
   } finally {
     busy = false;
     setState('idle');
@@ -1943,7 +1949,8 @@ function showUser(text) { const el = $('#cap-user'); el.hidden = !text; el.textC
 function showAgent(text, isErr = false) { const el = $('#cap-agent'); el.hidden = false; el.textContent = text; el.classList.toggle('err', isErr); }
 
 function updateKeyBtn() {
-  $('#key-btn').hidden = !(document.body.classList.contains('present') && needsKey());
+  const studioHidden = document.body.classList.contains('present') || document.body.classList.contains('embed');
+  $('#key-btn').hidden = !(studioHidden && needsKey());
 }
 function setPresent(on) {
   document.body.classList.toggle('present', on);
