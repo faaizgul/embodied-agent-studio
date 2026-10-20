@@ -1324,7 +1324,7 @@ function gesturePose(g, p, tt) {
     }
     case 'namaste': {
       const bow = Math.sin(Math.PI * Math.min(1, Math.max(0, (p - 0.2) / 0.6)));
-      const arm = { upper: [0.14, -0.72, 0.68], fore: [-0.97, 0.3, 0.25], hand: [-0.05, 1, 0.22], palm: [-1, 0, 0], fingers: OPEN };
+      const arm = { reach: { at: 'chest', off: [0.06, 0, 0], pole: [0.7, -0.6, -0.2] }, hand: [-0.05, 1, 0.25], palm: [-1, 0, 0], fingers: OPEN };
       return { L: arm, R: arm, head: { pitch: 0.28 * bow * k } };
     }
     case 'point':
@@ -1340,7 +1340,7 @@ function gesturePose(g, p, tt) {
       return { L: arm, R: arm, head: { tilt: 0.16 * up * k, pitch: -0.04 * up } };
     }
     case 'chin':
-      return { R: { upper: [0.18, -0.75, 0.62], fore: [-0.55, 0.82, 0.3], hand: [-0.3, 0.9, 0.35], palm: [-0.3, 0, -1], fingers: { index: 0.35, middle: 0.75, ring: 0.85, little: 0.85, thumb: 0.3 } }, head: { tilt: 0.12 * k, pitch: 0.07 } };
+      return { R: { reach: { at: 'chin', off: [0.05, -0.32, 0.05], pole: [0.5, -0.85, 0.1] }, hand: [-0.35, 0.85, 0.4], palm: [-0.3, 0.2, -1], fingers: { index: 0.35, middle: 0.75, ring: 0.85, little: 0.85, thumb: 0.3 } }, head: { tilt: 0.12 * k, pitch: 0.07 } };
     case 'nod':
       return { head: { pitch: 0.15 * k * Math.abs(Math.sin(p * Math.PI * 3)) } };
     case 'count': {
@@ -1462,6 +1462,33 @@ function prepareRig(a) {
 }
 function resetRig(a) { a?.rig?.rest?.forEach(([b, q]) => b.quaternion.copy(q)); }
 
+// Two-joint reach: put the wrist at a point near the chest or chin, whatever the body's proportions.
+function solveReach(rig, side, reach, out, up, fwd) {
+  const arm = rig[side];
+  const P = (o) => o.getWorldPosition(new THREE.Vector3());
+  const S = P(arm.upper), E0 = P(arm.lower), W0 = P(arm.hand);
+  const a = E0.distanceTo(S), b = W0.distanceTo(E0);
+  const Lp = P(rig.L.upper), Rp = P(rig.R.upper);
+  const sw = Lp.distanceTo(Rp);
+  const mid = Lp.add(Rp).multiplyScalar(0.5);
+  const base = reach.at === 'chin'
+    ? mid.addScaledVector(up, 0.45 * sw).addScaledVector(fwd, 0.4 * sw)
+    : mid.addScaledVector(up, -0.12 * sw).addScaledVector(fwd, 0.55 * sw);
+  const [o, u, f] = reach.off || [0, 0, 0];
+  const T = base.addScaledVector(out, o * sw).addScaledVector(up, u * sw).addScaledVector(fwd, f * sw);
+  const D = T.clone().sub(S);
+  const d = Math.min(a + b - 1e-4, Math.max(Math.abs(a - b) + 1e-4, D.length()));
+  const dir = D.normalize();
+  const cosA = (a * a + d * d - b * b) / (2 * a * d);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const [po, pu, pf] = reach.pole;
+  const pole = new THREE.Vector3().addScaledVector(out, po).addScaledVector(up, pu).addScaledVector(fwd, pf);
+  pole.addScaledVector(dir, -pole.dot(dir)).normalize();
+  const E = S.clone().addScaledVector(dir, a * cosA).addScaledVector(pole, a * sinA);
+  const W = S.clone().addScaledVector(dir, d);
+  const toBody = (v) => [v.dot(out), v.dot(up), v.dot(fwd)];
+  return { upper: toBody(E.clone().sub(S).normalize()), fore: toBody(W.sub(E).normalize()) };
+}
 // Turn the hand around its own length so the palm faces a direction (wave: forward; namaste: the other hand).
 function twistPalm(arm, want, w) {
   const f = arm.fingers;
@@ -1541,9 +1568,11 @@ function updateGestures(dt, f) {
   if (rig.hasArms) {
     for (const side of ['L', 'R']) {
       const st = gest.arms[side];
-      const want = pose[side];
+      const out = side === 'L' ? left : left.clone().negate();
+      const want = pose[side] && { ...pose[side] };
       const goalW = want ? env : 0;
       st.w += (goalW - st.w) * rate;
+      if (want?.reach) Object.assign(want, solveReach(rig, side, want.reach, out, up, fwd));
       if (want) {
         const goal = new THREE.Vector3();
         st.upper.lerp(goal.set(...want.upper).normalize(), rate).normalize();
@@ -1555,7 +1584,6 @@ function updateGestures(dt, f) {
       const fingerGoal = want?.fingers || RELAXED;
       for (const k of FINGERS) st.fingers[k] += ((fingerGoal[k] || 0) - st.fingers[k]) * rate;
       const arm = rig[side];
-      const out = side === 'L' ? left : left.clone().negate();
       const t3 = new THREE.Vector3();
       if (st.w > 0.002) {
         aimBone(arm.upper, arm.lower, toWorld(st.upper, out, t3), st.w);
