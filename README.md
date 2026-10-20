@@ -42,6 +42,29 @@ Where to get your own avatar for free:
 - **Your own Blender model**: convert it with the VRM Add-on for Blender, or export a `.glb` with ARKit-style shape keys (`jawOpen`, `eyeBlinkLeft`, `mouthSmileLeft`).
 - **Free character packs** (Quaternius, Kenney, KayKit, 100 Avatars): most have no face shapes, so the mouth will not move.
 
+## Body behaviour: gestures and emotions
+
+The agent's body moves with what it says. The stage shows two live labels next to the status: **Feeling** (the emotion the brain chose for the face) and **Gesture** (what the hands are doing).
+
+Gestures: wave, namaste, point, open palms, shrug, hand to chin, nod and counting on fingers (1 to 5). Try each one from the Body tab.
+
+Switch each behaviour on or off in **Body > Body behaviour** to compare how alive, or how uncanny, the agent feels:
+
+| Behaviour | What it does |
+| --- | --- |
+| Idle movement | Breathing, small sways and glances. Blinking always stays on. |
+| Gestures with emotions and words | A hand to the chin while thinking; open palms when happy; a shrug when concerned; pointing when the reply gives directions; counting when it mentions a number from 2 to 5. |
+| Talking hands | Small hand movements that follow the rhythm of the voice. |
+| Let the brain choose gestures | The model is told which gestures its body can make and adds a tag such as `[point]` or `[count:3]` when a person would gesture. Off by default. |
+
+You can also choose the greeting (wave, namaste, nod or none) and how big the gestures are.
+
+The agent is always told what body it has and what that body can do, so its words and its body agree.
+
+**Which avatars can gesture.** The mascot, the robot and every VRM avatar can. A `.glb` can if it has a skeleton with standard bone names (Mixamo, Ready Player Me, VRoid, Rigify or MakeHuman); fingers work when the finger bones are there too. A model with no skeleton cannot move its arms, and the Body tab says so. The robot uses its own animations to wave and nod, and its three-fingered hands cannot point or count.
+
+**For the curious:** open the browser console and try `studio.gesture('namaste')`, `studio.gesture('count', 4)` or `studio.emotion('surprised')`.
+
 ## Voice
 
 **Listening modes**
