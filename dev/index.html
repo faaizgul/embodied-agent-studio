@@ -1410,6 +1410,7 @@ function releaseGesture(name) {
 const _v = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
 const _q = [0, 1, 2, 3].map(() => new THREE.Quaternion());
 const IDQ = new THREE.Quaternion();
+const _qAim = new THREE.Quaternion();
 function worldDir(a, b, out) { return out.copy(b.getWorldPosition(_v[4])).sub(a.getWorldPosition(_v[5])); }
 // Rotate a bone in world space by quaternion q (around its own pivot).
 function rotateBoneWorld(bone, q) {
@@ -1424,8 +1425,8 @@ function aimBone(bone, child, target, w) {
   const d = worldDir(bone, child, _v[0]);
   if (d.lengthSq() < 1e-10) return;
   d.normalize();
-  const q = _q[0].setFromUnitVectors(d, target);
-  if (w < 1) q.slerpQuaternions(IDQ, q, w);
+  const full = _q[0].setFromUnitVectors(d, target);
+  const q = w < 1 ? _qAim.slerpQuaternions(IDQ, full, w) : full; // separate target: slerpQuaternions must not write into its own input
   rotateBoneWorld(bone, q);
 }
 
