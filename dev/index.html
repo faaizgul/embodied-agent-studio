@@ -2510,6 +2510,12 @@ async function greet() {
   if (cfg.listenMode !== 'push' && SR) startConvo();
 }
 $('#start-btn').onclick = greet;
+// For the curious: try these from the browser console, e.g. studio.gesture('wave') or studio.gesture('count', 4).
+window.studio = {
+  gesture: (name, n) => playGesture(name, { n, why: 'from the console' }),
+  emotion: (name) => setEmotion(name),
+  loadAvatarUrl: async (url) => loadAvatarBlob(await (await fetch(url)).blob(), url.split('/').pop().split('?')[0]),
+};
 $$('#try-gestures [data-g]').forEach((b) => { b.onclick = () => { getAudio(); playGesture(b.dataset.g, { n: Number(b.dataset.n) || 3, why: 'tried from the Body tab' }); }; });
 $('#reset-chat').onclick = () => { stopConvo(); history = []; $('#cap-user').hidden = true; $('#cap-agent').hidden = true; $('#start-btn').hidden = false; log('brain', 'Started a new conversation'); };
 
