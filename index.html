@@ -1134,7 +1134,11 @@ async function buildRobot() {
   const rig = { L: robotArm('L'), R: robotArm('R'), head: headBone };
   const mixer = new THREE.AnimationMixer(model);
   const clips = Object.fromEntries(gltf.animations.map((c) => [c.name, c]));
+  // The model's own idle loop snaps the head round every 3.3 s, which is distracting.
+  // Keep its body movement, but let the studio move the head slowly, with pauses.
+  if (clips.Idle) { clips.Idle = clips.Idle.clone(); clips.Idle.tracks = clips.Idle.tracks.filter((tr) => !/^Head\.(quaternion|rotation)$/.test(tr.name)); }
   const idle = clips.Idle ? mixer.clipAction(clips.Idle) : null;
+  const look = { yaw: 0, pitch: 0, goalYaw: 0, goalPitch: 0, next: 2 };
   idle?.play();
   let current = null;
   mixer.addEventListener('finished', () => { if (current) { current.fadeOut(0.3); idle?.reset().fadeIn(0.3).play(); current = null; } });
@@ -1167,7 +1171,21 @@ async function buildRobot() {
       morph('Sad', Math.min(1, e.sad + e.concerned * 0.6));
       morph('Angry', e.thinking * 0.3);
       if (headBone) {
-        headBone.rotateX(f.mouth * Math.sin(t * 9) * 0.06 - e.thinking * 0.12);
+        // Slow glances: pick a new direction every 2.5 to 6 s, often back to centre, and ease towards it.
+        look.next -= dt;
+        if (look.next <= 0) {
+          const centre = Math.random() < 0.45 || !cfg.idleMotion;
+          look.goalYaw = centre ? 0 : (Math.random() - 0.5) * 0.36;
+          look.goalPitch = centre ? 0 : (Math.random() - 0.5) * 0.1;
+          look.next = 2.5 + Math.random() * 3.5;
+        }
+        const ease = Math.min(1, dt * 1.6);
+        look.yaw += (look.goalYaw - look.yaw) * ease;
+        look.pitch += (look.goalPitch - look.pitch) * ease;
+        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+        const side = new THREE.Vector3(1, 0, 0).applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+        rotateBoneWorld(headBone, new THREE.Quaternion().setFromAxisAngle(up, look.yaw));
+        rotateBoneWorld(headBone, new THREE.Quaternion().setFromAxisAngle(side, look.pitch + e.thinking * 0.1 - (voiceLive ? Math.sin(t * 5.5) * f.mouth * 0.035 : 0)));
         headBone.rotateZ(e.thinking * 0.12);
       }
     },
@@ -1556,8 +1574,9 @@ function updateGestures(dt, f) {
       pose = gesturePose(g, Math.min(1, g.t / g.dur), g.t);
     }
   }
-  gest.beat += ((speaking ? f.mouth : 0) - gest.beat) * Math.min(1, dt * 6);
-  const talking = cfg.talkHands && speaking && !gest.cur;
+  const live = speaking && (voiceLive || audioSpeaking);
+  gest.beat += ((live ? f.mouth : 0) - gest.beat) * Math.min(1, dt * 6);
+  const talking = cfg.talkHands && live && !gest.cur;
   if (talking) {
     gest.talkSwap -= dt;
     if (gest.talkSwap <= 0) { gest.talkSide = Math.random() < 0.35 ? (gest.talkSide === 'L' ? 'R' : 'L') : gest.talkSide; gest.talkSwap = 2 + Math.random() * 2.5; }
@@ -1712,6 +1731,7 @@ const face = {
   target: 'neutral',
 };
 let speaking = false;
+let voiceLive = false; // true only while sound is actually coming out
 let mouthPulse = 0;
 let nextBlink = 2;
 let blinkT = -1;
@@ -1779,7 +1799,7 @@ function tick(time, xrFrame) {
     goal = Math.min(1, Math.max(0, (lvl - 0.012) * 9));
     visemeClock -= dt;
     if (goal > 0.15 && visemeClock <= 0) { face.viseme = ['aa', 'oh', 'ee', 'aa', 'ih', 'ou'][Math.floor(Math.random() * 6)]; visemeClock = 0.09 + Math.random() * 0.08; }
-  } else if (speaking) {
+  } else if (speaking && voiceLive) {
     mouthPulse = Math.max(0, mouthPulse - dt * 3);
     goal = 0.25 + 0.45 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.1)) + mouthPulse * 0.3;
   }
@@ -1840,9 +1860,13 @@ function estimateSeconds(text) { return Math.max(1.2, text.split(/\s+/).length *
 
 function speakBrowser(text) {
   return new Promise((resolve) => {
-    if (!hasTTS) { speaking = true; setTimeout(resolve, estimateSeconds(text) * 1000); return; }
+    if (!hasTTS) { speaking = true; markVoiceStart(); setTimeout(resolve, estimateSeconds(text) * 1000); return; }
     speechSynthesis.cancel();
-    const parts = text.match(/[^.!?।]+[.!?।]*\s*/g) || [text];
+    // One utterance for a short reply: online voices take about a second to start each utterance,
+    // so splitting a short reply into sentences would add a pause before every sentence.
+    const sentences = text.match(/[^.!?।]+[.!?।]*\s*/g) || [text];
+    const parts = [];
+    sentences.forEach((x) => { if (parts.length && (parts[parts.length - 1] + x).length <= 240) parts[parts.length - 1] += x; else parts.push(x); });
     const voice = voices.find((v) => v.name === cfg.voiceName);
     log('voice', `Speaking with ${voice ? voice.name : 'the default voice'}`);
     let i = 0;
@@ -1862,9 +1886,10 @@ function speakBrowser(text) {
         mouthPulse = 1;
       };
       u.onstart = markVoiceStart;
-      u.onend = go;
-      u.onerror = go;
+      u.onend = () => { voiceLive = false; go(); };
+      u.onerror = () => { voiceLive = false; go(); };
       speechSynthesis.speak(u);
+      setTimeout(() => { if (!done && speaking && !voiceLive && speechSynthesis.speaking) markVoiceStart(); }, 3000); // a few voices never report that they started
     };
     speaking = true;
     next();
@@ -2044,9 +2069,10 @@ async function speak(text, emotion = 'neutral') {
   pauseEars();
   stopSpeaking();
   speaking = true;
-  setState('speaking');
+  voiceLive = false;
   try {
     if (!cfg.autoSpeak) {
+      markVoiceStart();
       await new Promise((r) => setTimeout(r, estimateSeconds(text) * 1000));
     } else if (cfg.voiceSource === 'gemini' && Date.now() > geminiVoiceCooldown && keyFor('gemini')) {
       try {
@@ -2065,6 +2091,7 @@ async function speak(text, emotion = 'neutral') {
   } finally {
     speaking = false;
     audioSpeaking = false;
+    voiceLive = false;
     setState('idle');
   }
 }
@@ -2077,6 +2104,7 @@ function stopSpeaking() {
   streamSources = [];
   speaking = false;
   audioSpeaking = false;
+  voiceLive = false;
 }
 
 /* ================= Voice: ears (speech to text) ================= */
@@ -2338,7 +2366,13 @@ function refreshPrompt() { $('#prompt-preview').textContent = buildPrompt(); }
 let history = [];
 let busy = false;
 let turnT0 = 0, turnBrainS = 0, turnVoiced = true;
+// What should happen the moment the voice is actually heard (gesture, caption).
+// Online voices can take a second or two to start, and the body should not move before the sound.
+let onVoiceStart = null, voiceStartFallback = 0;
 function markVoiceStart() {
+  voiceLive = true;
+  setState('speaking');
+  if (onVoiceStart) { const fn = onVoiceStart; onVoiceStart = null; clearTimeout(voiceStartFallback); fn(); }
   if (turnVoiced || !turnT0) return;
   turnVoiced = true;
   const total = (performance.now() - turnT0) / 1000;
@@ -2523,14 +2557,16 @@ async function converse(userText) {
     const raw = await think(messages);
     turnBrainS = (performance.now() - t0) / 1000;
     const { emotion, text, gesture } = parseReply(raw);
-    releaseGesture('chin');
     log('brain', `Replied in ${((performance.now() - t0) / 1000).toFixed(1)} s: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}"`);
     history.push({ role: 'assistant', content: raw.trim() });
     setEmotion(emotion);
     if (gesture) log('brain', `Chose the gesture: ${gesture.name}${gesture.name === 'count' ? ` ${gesture.n}` : ''}`);
-    gestureForReply(emotion, text, gesture);
-    showAgent(text);
+    // Hold the thinking pose until the voice starts, then gesture and show the words together.
+    onVoiceStart = () => { releaseGesture('chin'); gestureForReply(emotion, text, gesture); showAgent(text); };
+    clearTimeout(voiceStartFallback);
+    voiceStartFallback = setTimeout(() => { if (onVoiceStart) { const fn = onVoiceStart; onVoiceStart = null; fn(); } }, 4000); // if no voice ever starts
     await speak(text, emotion);
+    if (onVoiceStart) { const fn = onVoiceStart; onVoiceStart = null; clearTimeout(voiceStartFallback); fn(); }
   } catch (err) {
     const msg = friendlyError(err);
     log('brain', `${msg}${err.status ? ` (HTTP ${err.status})` : ''}`, true);
@@ -2561,10 +2597,12 @@ async function greet() {
   getAudio();
   $('#start-btn').hidden = true;
   setEmotion('happy');
-  greetGesture();
-  showAgent(cfg.greeting);
+  onVoiceStart = () => { greetGesture(); showAgent(cfg.greeting); };
+  clearTimeout(voiceStartFallback);
+  voiceStartFallback = setTimeout(() => { if (onVoiceStart) { const fn = onVoiceStart; onVoiceStart = null; fn(); } }, 4000);
   history = [{ role: 'assistant', content: `[happy] ${cfg.greeting}` }];
   await speak(cfg.greeting, 'happy');
+  if (onVoiceStart) { const fn = onVoiceStart; onVoiceStart = null; clearTimeout(voiceStartFallback); fn(); }
   setTimeout(() => setEmotion('neutral'), 1200);
   if (cfg.listenMode !== 'push' && SR) startConvo();
 }

@@ -79,7 +79,7 @@ The agent pauses its ears while it speaks, so it does not hear itself. Press the
 
 **When it decides you have finished.** The studio does not wait for the browser to decide that a sentence is over, which can take several seconds. When your words stop changing for a set pause (0.6, 1 or 1.6 seconds, in the Voice tab), the turn ends and the agent replies. Shorter feels snappier but may cut people off.
 
-**Why a reply takes time.** Each turn has three waits: the pause before your turn ends, the brain thinking, and the voice starting. The *Behind the scenes* tab shows all three for every reply. For the quickest conversation, keep a "lite" Gemini model or Groq for the brain, and use a browser voice. Bigger "thinking" models such as `gemini-3.8-flash` can take 5 to 30 seconds per reply on the free tier, which feels broken in a spoken conversation.
+**Why a reply takes time.** Each turn has three waits: the pause before your turn ends, the brain thinking, and the voice starting. The agent keeps its thinking pose until the voice is actually heard; only then do the lips, hands and caption start, so the body never moves ahead of the sound. Edge's natural voices stream from Microsoft's servers and usually take about a second to start. The *Behind the scenes* tab shows all three for every reply. For the quickest conversation, keep a "lite" Gemini model or Groq for the brain, and use a browser voice. Bigger "thinking" models such as `gemini-3.8-flash` can take 5 to 30 seconds per reply on the free tier, which feels broken in a spoken conversation.
 
 **Voices**
 
