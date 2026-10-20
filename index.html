@@ -116,14 +116,6 @@ body.xr #canvas-wrap, body.xr #cam-video { visibility: hidden; }
 .state-chip[data-state="wake"]::before { animation-duration: 2.4s; }
 .state-chip[data-state="thinking"]::before { background: var(--think); animation: pulse 0.7s infinite; }
 .state-chip[data-state="speaking"]::before { background: var(--speak); }
-.agent-id { flex-wrap: wrap; row-gap: 6px; }
-.mood-chip::before { background: #8a97a5; transition: background 0.3s; }
-.mood-chip[data-mood="happy"]::before { background: #f2c14e; }
-.mood-chip[data-mood="sad"]::before { background: #7ea6e8; }
-.mood-chip[data-mood="surprised"]::before { background: #e98ad9; }
-.mood-chip[data-mood="thinking"]::before { background: var(--think); }
-.mood-chip[data-mood="concerned"]::before { background: #f07a62; }
-.gesture-chip::before { background: transparent; border: 2px solid #9fd8a8; width: 6px; height: 6px; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .state-chip::before { animation: none !important; } }
 .stage-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -260,11 +252,6 @@ input[type="color"] { width: 44px; height: 32px; border: 1px solid var(--line); 
 }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.btn.small { padding: 6px 10px; font-size: 13px; }
-.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.check { display: flex; gap: 9px; align-items: flex-start; font-size: 14px; }
-.check input { margin-top: 3px; }
-.check small { display: block; color: var(--muted); font-size: 12.5px; }
 .btn:disabled { opacity: 0.5; cursor: wait; }
 .note {
   font-size: 12.5px; color: var(--muted); background: var(--panel-2);
@@ -350,8 +337,6 @@ details > .guide, details > .lede { margin-top: 4px; }
       <div class="agent-id">
         <span class="agent-name" id="agent-name">Ira</span>
         <span class="state-chip" id="state-chip" data-state="idle">Idle</span>
-        <span class="state-chip mood-chip" id="emotion-chip" data-mood="neutral" title="The emotion the agent chose for its face">Feeling: neutral</span>
-        <span class="state-chip gesture-chip" id="gesture-chip" title="The gesture the body is making" hidden></span>
       </div>
       <div class="stage-actions">
         <button class="ghost-btn" id="key-btn" type="button" hidden>Add AI key</button>
@@ -439,44 +424,6 @@ details > .guide, details > .lede { margin-top: 4px; }
           <div class="field"><label for="c-skin">Skin</label><input id="c-skin" type="color" data-cfg="skinColor"></div>
           <div class="field"><label for="c-hair">Hair</label><input id="c-hair" type="color" data-cfg="hairColor"></div>
           <div class="field"><label for="c-eye">Eyes</label><input id="c-eye" type="color" data-cfg="eyeColor"></div>
-        </div>
-
-        <div class="group-title">Body behaviour</div>
-        <p class="hint" style="margin:0">Switch behaviours off to compare. Does the agent feel more alive, or more uncanny, with its hands moving?</p>
-        <label class="check"><input type="checkbox" id="b-idle" data-cfg="idleMotion"><span>Idle movement<small>Breathing, small sways and glances. Blinking always stays on.</small></span></label>
-        <label class="check"><input type="checkbox" id="b-emotion" data-cfg="emotionGestures"><span>Gestures with emotions and words<small>Open palms when happy, a shrug when concerned, a hand to the chin while thinking, pointing at directions and counting numbers.</small></span></label>
-        <label class="check"><input type="checkbox" id="b-talk" data-cfg="talkHands"><span>Talking hands<small>Small hand movements that follow the rhythm of its voice.</small></span></label>
-        <label class="check"><input type="checkbox" id="b-brain" data-cfg="brainGestures"><span>Let the brain choose gestures<small>The model is told which gestures its body can make, and picks one when a person would.</small></span></label>
-        <div class="field">
-          <label for="f-greetg">Greeting gesture</label>
-          <select id="f-greetg" data-cfg="greetGesture">
-            <option value="wave">Wave</option>
-            <option value="namaste">Namaste</option>
-            <option value="nod">Nod</option>
-            <option value="none">None</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="f-gint">How big the gestures are</label>
-          <select id="f-gint" data-cfg="gestureIntensity">
-            <option value="0.6">Subtle</option>
-            <option value="0.85">Natural</option>
-            <option value="1">Expressive</option>
-          </select>
-        </div>
-        <div class="field">
-          <span class="label">Try a gesture</span>
-          <div class="chip-row" id="try-gestures">
-            <button class="btn small" type="button" data-g="wave">Wave</button>
-            <button class="btn small" type="button" data-g="namaste">Namaste</button>
-            <button class="btn small" type="button" data-g="point">Point</button>
-            <button class="btn small" type="button" data-g="palms">Open palms</button>
-            <button class="btn small" type="button" data-g="shrug">Shrug</button>
-            <button class="btn small" type="button" data-g="chin">Hand to chin</button>
-            <button class="btn small" type="button" data-g="nod">Nod</button>
-            <button class="btn small" type="button" data-g="count" data-n="3">Count to 3</button>
-          </div>
-          <span class="hint" id="behaviour-note"></span>
         </div>
 
         <div class="group-title">Camera and set</div>
@@ -835,12 +782,6 @@ const DEFAULTS = {
   listenLang: 'en-IN',
   listenMode: 'push',
   endPause: '1',
-  idleMotion: true,
-  emotionGestures: true,
-  talkHands: true,
-  brainGestures: false,
-  greetGesture: 'wave',
-  gestureIntensity: '0.85',
   voiceSource: 'browser',
   voiceName: '',
   geminiVoice: 'Kore',
@@ -963,45 +904,14 @@ function buildMascot() {
   // Body: torso, shoulders, arms, hands, legs hinted by a long top
   const torso = add(root, new THREE.CapsuleGeometry(0.19, 0.46, 10, 28), bodyMat, [0, 0.8, 0], [1.25, 1, 0.78]);
   const collar = add(root, new THREE.TorusGeometry(0.075, 0.018, 10, 28), bodyMat, [0, 1.09, 0.005], [1, 1, 1], [Math.PI / 2, 0, 0]);
-  // Arms with a shoulder, elbow and wrist, and simple fingers, so the gesture engine can move them.
-  // s = 1 is the mascot's own left (it faces the camera, along +z).
-  const rig = {};
   const arms = [1, -1].map((s) => {
     const shoulder = new THREE.Group();
     shoulder.position.set(0.255 * s, 1.0, 0);
     root.add(shoulder);
     add(shoulder, new THREE.SphereGeometry(0.068, 20, 14), bodyMat, [0, 0, 0]);
-    add(shoulder, new THREE.CapsuleGeometry(0.052, 0.17, 8, 16), bodyMat, [0.01 * s, -0.115, 0]);
-    const elbow = new THREE.Group();
-    elbow.position.set(0.018 * s, -0.235, 0);
-    shoulder.add(elbow);
-    add(elbow, new THREE.SphereGeometry(0.05, 16, 12), bodyMat, [0, 0, 0]);
-    add(elbow, new THREE.CapsuleGeometry(0.047, 0.13, 8, 16), bodyMat, [0.004 * s, -0.09, 0]);
-    const wrist = new THREE.Group();
-    wrist.position.set(0.006 * s, -0.215, 0.004);
-    elbow.add(wrist);
-    add(wrist, new THREE.CapsuleGeometry(0.033, 0.03, 6, 12), skinMat, [0, -0.005, 0]);
-    add(wrist, new THREE.SphereGeometry(0.044, 16, 12), skinMat, [0, -0.055, 0.004], [0.62, 1.0, 0.95]);
-    const handEnd = new THREE.Object3D();
-    handEnd.position.set(0, -0.12, 0.004);
-    wrist.add(handEnd);
-    const finger = (pos, len, rot = [0, 0, 0]) => {
-      const g = new THREE.Group();
-      g.position.set(...pos); g.rotation.set(...rot);
-      wrist.add(g);
-      add(g, new THREE.CapsuleGeometry(0.0105, len, 4, 8), skinMat, [0, -len / 2 - 0.004, 0]);
-      const tip = new THREE.Object3D(); tip.position.set(0, -len - 0.012, 0); g.add(tip);
-      return [{ bone: g, tip }];
-    };
-    // Index at the front, little finger at the back; the palm faces the body.
-    const fingers = {
-      index: finger([0, -0.085, 0.026], 0.034),
-      middle: finger([0, -0.09, 0.009], 0.038),
-      ring: finger([0, -0.088, -0.008], 0.034),
-      little: finger([0, -0.082, -0.024], 0.027),
-      thumb: finger([-0.016 * s, -0.04, 0.036], 0.03, [-0.5, 0, 0.35 * s]),
-    };
-    rig[s === 1 ? 'L' : 'R'] = { upper: shoulder, lower: elbow, hand: wrist, end: handEnd, fingers };
+    add(shoulder, new THREE.CapsuleGeometry(0.052, 0.36, 8, 16), bodyMat, [0.02 * s, -0.22, 0]);
+    add(shoulder, new THREE.CapsuleGeometry(0.035, 0.07, 6, 12), skinMat, [0.025 * s, -0.46, 0.005]);
+    add(shoulder, new THREE.SphereGeometry(0.048, 16, 12), skinMat, [0.025 * s, -0.53, 0.01], [0.85, 1.15, 0.6]);
     return { shoulder, s };
   });
   const neck = add(root, new THREE.CylinderGeometry(0.055, 0.065, 0.14, 20), skinMat, [0, 1.15, 0]);
@@ -1053,25 +963,23 @@ function buildMascot() {
     c.renderOrder = 2;
   }
 
-  rig.head = head;
   let t = 0, look = new THREE.Vector2(), lookGoal = new THREE.Vector2(), nextLook = 1.5, nod = 0;
   return {
-    kind: 'builtin', label: 'Mascot', root, headY: 1.38, height: 1.62, frameScale: 1.25, rig,
+    kind: 'builtin', label: 'Mascot', root, headY: 1.38, height: 1.62, frameScale: 1.25,
     update(dt, f) {
       t += dt;
       const e = f.emotion;
-      const idle = cfg.idleMotion ? 1 : 0;
-      // Idle life: breathing, small sways, and glances (switch off in Body behaviour)
-      torso.scale.y = 1 + Math.sin(t * 1.6) * 0.008 * idle;
+      // Idle life: breathing, small sways, and glances
+      torso.scale.y = 1 + Math.sin(t * 1.6) * 0.008;
       nextLook -= dt;
-      if (nextLook <= 0) { lookGoal.set((Math.random() - 0.5) * 0.35 * idle, (Math.random() - 0.5) * 0.2 * idle); if (Math.random() < 0.5) lookGoal.set(0, 0); nextLook = 1.2 + Math.random() * 2.5; }
+      if (nextLook <= 0) { lookGoal.set((Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.2); if (Math.random() < 0.5) lookGoal.set(0, 0); nextLook = 1.2 + Math.random() * 2.5; }
       look.lerp(lookGoal, Math.min(1, dt * 12));
       eyes.forEach((eye) => { eye.rotation.y = look.x; eye.rotation.x = -look.y - e.thinking * 0.25; });
-      nod += ((f.mouth > 0.2 ? Math.sin(t * 5.5) * 0.025 * idle : 0) - nod) * Math.min(1, dt * 4);
-      head.rotation.x = Math.sin(t * 0.7) * 0.025 * idle - e.thinking * 0.1 + e.sad * 0.12 + nod;
-      head.rotation.z = Math.sin(t * 0.5) * 0.02 * idle + e.thinking * 0.1 - e.surprised * 0.03;
-      head.rotation.y = Math.sin(t * 0.33) * 0.05 * idle + look.x * 0.15;
-      arms.forEach(({ shoulder, s }) => { shoulder.rotation.set(0, 0, s * (0.1 + Math.sin(t * 1.6) * 0.012 * idle) + s * e.surprised * 0.08); });
+      nod += ((f.mouth > 0.2 ? Math.sin(t * 5.5) * 0.025 : 0) - nod) * Math.min(1, dt * 4);
+      head.rotation.x = Math.sin(t * 0.7) * 0.025 - e.thinking * 0.1 + e.sad * 0.12 + nod;
+      head.rotation.z = Math.sin(t * 0.5) * 0.02 + e.thinking * 0.1 - e.surprised * 0.03;
+      head.rotation.y = Math.sin(t * 0.33) * 0.05 + look.x * 0.15;
+      arms.forEach(({ shoulder, s }) => { shoulder.rotation.z = s * (0.1 + Math.sin(t * 1.6) * 0.012) + s * e.surprised * 0.08; });
       // Eyelids: open is rotated back, a blink rotates them forward over the eye
       const openAngle = -1.05 - e.surprised * 0.35;
       const close = Math.min(1, f.blink + e.happy * 0.28 + e.sad * 0.18 + e.thinking * 0.12);
@@ -1126,9 +1034,6 @@ async function buildRobot() {
     if (o.morphTargetDictionary && 'Surprised' in o.morphTargetDictionary) faceMesh = o;
     if (!headBone && (o.isBone || o.type === 'Bone') && /^head/i.test(o.name)) headBone = o;
   });
-  const byName = (re) => { let hit = null; model.traverse((o) => { if (!hit && o.isBone && re.test(o.name)) hit = o; }); return hit; };
-  const robotArm = (side) => ({ upper: byName(new RegExp(`^UpperArm\\.?${side}$`)), lower: byName(new RegExp(`^LowerArm\\.?${side}$`)), hand: byName(new RegExp(`^Palm2\\.?${side}$`)), end: byName(new RegExp(`^Middle1\\.?${side}$`)) });
-  const rig = { L: robotArm('L'), R: robotArm('R'), head: headBone };
   const mixer = new THREE.AnimationMixer(model);
   const clips = Object.fromEntries(gltf.animations.map((c) => [c.name, c]));
   const idle = clips.Idle ? mixer.clipAction(clips.Idle) : null;
@@ -1150,14 +1055,10 @@ async function buildRobot() {
   root.updateMatrixWorld(true);
   const box2 = new THREE.Box3().setFromObject(root, true);
   return {
-    kind: 'robot', label: 'Robot', root, headY: box2.max.y * 0.78, height: box2.max.y, frameScale: 1.6, rig,
-    noFingers: true, // three chunky fingers, no pointing or counting
-    clips: { wave: 'Wave', nod: 'Yes', thumbs: 'ThumbsUp' },
-    playClip(name) { if (!clips[name] || current) return false; play(name); return true; },
+    kind: 'robot', label: 'Robot', root, headY: box2.max.y * 0.78, height: box2.max.y, frameScale: 1.6,
     update(dt, f) {
       t += dt;
       if (headBone) headBone.quaternion.copy(headRest);
-      if (idle) idle.timeScale = cfg.idleMotion ? 1 : 0;
       mixer.update(dt);
       const e = f.emotion;
       morph('Surprised', e.surprised);
@@ -1168,7 +1069,12 @@ async function buildRobot() {
         headBone.rotateZ(e.thinking * 0.12);
       }
     },
-    react(ev) { if (ev === 'surprised') play('Jump'); },
+    react(ev) {
+      if (ev === 'greet') play('Wave');
+      else if (ev === 'happy') play('Yes');
+      else if (ev === 'concerned') play('No');
+      else if (ev === 'surprised') play('Jump');
+    },
     dispose() { mixer.stopAllAction(); root.traverse((o) => { o.geometry?.dispose?.(); }); },
   };
 }
@@ -1190,30 +1096,22 @@ async function loadAvatarFile(url, fileName) {
     const box = new THREE.Box3().setFromObject(vrm.scene);
     if (vrm.lookAt) vrm.lookAt.target = camera;
     const bone = (n) => vrm.humanoid.getNormalizedBoneNode(n);
-    const raw = (n) => vrm.humanoid.getRawBoneNode(n);
-    const vrmArm = (side) => {
-      const chain = (f) => (f === 'Thumb' ? ['Metacarpal', 'Proximal', 'Distal'] : ['Proximal', 'Intermediate', 'Distal']).map((j) => raw(`${side}${f}${j}`)).filter(Boolean).map((b) => ({ bone: b }));
-      const fingers = { index: chain('Index'), middle: chain('Middle'), ring: chain('Ring'), little: chain('Little'), thumb: chain('Thumb') };
-      return { upper: raw(`${side}UpperArm`), lower: raw(`${side}LowerArm`), hand: raw(`${side}Hand`), end: raw(`${side}MiddleProximal`), fingers };
-    };
-    const rig = { L: vrmArm('left'), R: vrmArm('right'), head: raw('head') };
     const em = vrm.expressionManager;
     const has = (n) => !!em?.getExpression(n);
     let t = 0;
     return {
-      kind: 'vrm', label: fileName, root: vrm.scene, headY, height: box.max.y - box.min.y, fileName, rig,
+      kind: 'vrm', label: fileName, root: vrm.scene, headY, height: box.max.y - box.min.y, fileName,
       update(dt, f) {
         t += dt;
         const e = f.emotion;
-        const idle = cfg.idleMotion ? 1 : 0;
         const set = (n, r) => { const b = bone(n); if (b) { b.rotation.set(r[0], r[1], r[2]); } };
-        set('leftUpperArm', [0, 0, -1.2 + Math.sin(t * 1.6) * 0.015 * idle]);
-        set('rightUpperArm', [0, 0, 1.2 - Math.sin(t * 1.6) * 0.015 * idle]);
+        set('leftUpperArm', [0, 0, -1.2 + Math.sin(t * 1.6) * 0.015]);
+        set('rightUpperArm', [0, 0, 1.2 - Math.sin(t * 1.6) * 0.015]);
         set('leftLowerArm', [0, -0.15, -0.12]);
         set('rightLowerArm', [0, 0.15, 0.12]);
-        set('spine', [Math.sin(t * 1.6) * 0.012 * idle, 0, 0]);
-        set('chest', [Math.sin(t * 1.6 + 0.6) * 0.012 * idle, 0, 0]);
-        set('neck', [(Math.sin(t * 0.7) * 0.02 + (f.mouth > 0.2 ? Math.sin(t * 5.5) * 0.02 : 0)) * idle + e.sad * 0.1 - e.thinking * 0.06, Math.sin(t * 0.33) * 0.05 * idle, Math.sin(t * 0.5) * 0.02 * idle + e.thinking * 0.1]);
+        set('spine', [Math.sin(t * 1.6) * 0.012, 0, 0]);
+        set('chest', [Math.sin(t * 1.6 + 0.6) * 0.012, 0, 0]);
+        set('neck', [Math.sin(t * 0.7) * 0.02 + e.sad * 0.1 - e.thinking * 0.06 + (f.mouth > 0.2 ? Math.sin(t * 5.5) * 0.02 : 0), Math.sin(t * 0.33) * 0.05, Math.sin(t * 0.5) * 0.02 + e.thinking * 0.1]);
         if (em) {
           const w = { happy: 0, sad: 0, surprised: 0, relaxed: 0 };
           for (const [k, name] of Object.entries(VRM_EMOTION)) w[name] = Math.max(w[name], e[k] || 0);
@@ -1248,10 +1146,9 @@ async function loadAvatarFile(url, fileName) {
   root.traverse((o) => { if (o.isBone && /head$/i.test(o.name)) headY = o.getWorldPosition(v3).y - box2.min.y; });
   const mixer = gltf.animations?.length ? new THREE.AnimationMixer(root) : null;
   if (mixer) mixer.clipAction(gltf.animations[0]).play();
-  const rig = findGlbRig(root);
   const VIS = { aa: ['viseme_aa', 'jawOpen', 'mouthOpen', 'A'], ee: ['viseme_E', 'viseme_I', 'mouthOpen', 'E'], ih: ['viseme_I', 'mouthOpen', 'I'], oh: ['viseme_O', 'mouthFunnel', 'O'], ou: ['viseme_U', 'mouthPucker', 'U'] };
   return {
-    kind: 'glb', label: fileName, root, headY, height: box2.max.y - box2.min.y, fileName, rig,
+    kind: 'glb', label: fileName, root, headY, height: box2.max.y - box2.min.y, fileName,
     update(dt, f) {
       mixer?.update(dt);
       for (const k of Object.keys(VIS)) setMorph(VIS[k], 0);
@@ -1266,325 +1163,12 @@ async function loadAvatarFile(url, fileName) {
   };
 }
 
-/* ================= Gestures: arms, hands and head =================
-   One gesture library drives every body. A gesture says where each arm segment should point,
-   in the body's own frame: out to its side, up, and forward. Each frame the engine turns those
-   directions into bone rotations, so it works on any skeleton with an upper arm, forearm and hand. */
-function findGlbRig(root) {
-  const bones = [];
-  root.traverse((o) => { if (o.isBone) bones.push(o); });
-  if (!bones.length) return null;
-  // Blender's ".L" becomes a trailing "L" once three.js cleans the name ("upper_arm.L" -> "upper_armL").
-  const sideOf = (n) => (/[a-z0-9_]L$/.test(n) || /left|(^|[^a-z])l([^a-z]|$)|_l_/i.test(n) ? 'L' : /[a-z0-9_]R$/.test(n) || /right|(^|[^a-z])r([^a-z]|$)|_r_/i.test(n) ? 'R' : '');
-  const stem = (n) => n.replace(/([a-z0-9_])[LR]$/, '$1').toLowerCase().replace(/mixamorig\d*/g, '').replace(/j_bip_[lrc]_/g, '').replace(/left|right/g, '').replace(/(^|[_.\s-])[lr]([_.\s-]|$)/g, '$1$2').replace(/[^a-z0-9]/g, '');
-  const pick = (side, re) => bones.find((b) => sideOf(b.name) === side && re.test(stem(b.name)));
-  const arm = (side) => {
-    const chain = (re) => bones.filter((b) => sideOf(b.name) === side && re.test(stem(b.name)))
-      .sort((a, b) => stem(a.name).localeCompare(stem(b.name))).slice(0, 3).map((b) => ({ bone: b }));
-    return {
-      upper: pick(side, /^(upperarm|arm|uparm|upperarm0?1)$/),
-      lower: pick(side, /^(forearm|lowerarm|lowerarm0?1|elbow)$/),
-      hand: pick(side, /^(hand|wrist|palm)$/),
-      end: pick(side, /^(handmiddle1|middle1|middle0?1|middleproximal|fmiddle0?1|middlefinger1|finger31)$/),
-      fingers: { // Mixamo, Ready Player Me, VRoid, Rigify and MakeHuman names
-        index: chain(/^((hand|f)?index(finger)?(\d|proximal|intermediate|distal)|finger2\d)/),
-        middle: chain(/^((hand|f)?middle(finger)?(\d|proximal|intermediate|distal)|finger3\d)/),
-        ring: chain(/^((hand|f)?ring(finger)?(\d|proximal|intermediate|distal)|finger4\d)/),
-        little: chain(/^((hand|f)?(pinky|little)(finger)?(\d|proximal|intermediate|distal)|finger5\d)/),
-        thumb: chain(/^((hand|f)?thumb(\d|metacarpal|proximal|intermediate|distal)|finger1\d)/),
-      },
-    };
-  };
-  const rig = { L: arm('L'), R: arm('R'), head: bones.find((b) => /^head$/.test(stem(b.name))) || null };
-  return rig.L.upper && rig.L.lower && rig.R.upper && rig.R.lower ? rig : (rig.head ? { head: rig.head } : null);
-}
-
-const GESTURES = {
-  wave: { label: 'Waving', dur: 2.4 },
-  namaste: { label: 'Namaste', dur: 2.6 },
-  point: { label: 'Pointing', dur: 2.2 },
-  palms: { label: 'Open palms', dur: 2.0 },
-  shrug: { label: 'Shrugging', dur: 1.8 },
-  chin: { label: 'Hand to chin', dur: 2.6 },
-  nod: { label: 'Nodding', dur: 1.3 },
-  count: { label: 'Counting', dur: 2.5 },
-};
-const FINGERS = ['index', 'middle', 'ring', 'little', 'thumb'];
-const FIST = { index: 1, middle: 1, ring: 1, little: 1, thumb: 0.7 };
-const OPEN = { index: 0, middle: 0, ring: 0, little: 0, thumb: 0 };
-const RELAXED = { index: 0.22, middle: 0.26, ring: 0.3, little: 0.34, thumb: 0.12 };
-
-// Where each arm segment points for a gesture: [out, up, forward], at progress p (0 to 1), time tt in seconds.
-function gesturePose(g, p, tt) {
-  const k = intensityAmp();
-  switch (g.name) {
-    case 'wave': {
-      const sw = Math.sin(tt * 7.5) * 0.55 * k;
-      return { R: { upper: [0.8, 0.3, 0.35], fore: [0.12 + sw * 0.6, 1, 0.22], hand: [0.15 + sw, 1, 0.15], fingers: OPEN }, head: { tilt: 0.06 } };
-    }
-    case 'namaste': {
-      const bow = Math.sin(Math.PI * Math.min(1, Math.max(0, (p - 0.2) / 0.6)));
-      const arm = { upper: [0.28, -0.8, 0.55], fore: [-0.85, 0.42, 0.42], hand: [-0.1, 1, 0.18], fingers: OPEN };
-      return { L: arm, R: arm, head: { pitch: 0.28 * bow * k } };
-    }
-    case 'point':
-      return { R: { upper: [0.32, -0.05, 1], fore: [0.28, 0.08, 1], hand: [0.28, 0.08, 1], fingers: { index: 0, middle: 1, ring: 1, little: 1, thumb: 0.75 } }, head: { tilt: -0.04 } };
-    case 'palms': {
-      const b = Math.sin(tt * 3) * 0.08 * k;
-      const arm = { upper: [0.42, -0.85, 0.32], fore: [0.5 + b, 0.05, 0.85], hand: [0.75, 0.38 + b, 0.5], fingers: OPEN };
-      return { L: arm, R: arm };
-    }
-    case 'shrug': {
-      const up = Math.sin(Math.PI * Math.min(1, p * 1.6));
-      const arm = { upper: [0.5, -0.85, 0.15], fore: [0.85, 0.12 + 0.2 * up, 0.55], hand: [0.85, 0.5, 0.25], fingers: OPEN };
-      return { L: arm, R: arm, head: { tilt: 0.16 * up * k, pitch: -0.04 * up } };
-    }
-    case 'chin':
-      return { R: { upper: [0.18, -0.75, 0.62], fore: [-0.55, 0.82, 0.3], hand: [-0.3, 0.9, 0.35], fingers: { index: 0.35, middle: 0.75, ring: 0.85, little: 0.85, thumb: 0.3 } }, head: { tilt: 0.12 * k, pitch: 0.07 } };
-    case 'nod':
-      return { head: { pitch: 0.15 * k * Math.abs(Math.sin(p * Math.PI * 3)) } };
-    case 'count': {
-      const shown = Math.min(g.n, 1 + Math.floor(Math.max(0, tt - 0.45) / 0.5));
-      const fingers = {};
-      FINGERS.forEach((f, i) => { fingers[f] = i < shown ? 0 : 1; });
-      return { R: { upper: [0.38, -0.45, 0.8], fore: [0.1, 0.95, 0.35], hand: [0.04, 1, 0.22], fingers } };
-    }
-    default: return {};
-  }
-}
-function talkPose(beat, side) {
-  const arm = { upper: [0.26, -0.95, 0.24], fore: [0.38, -0.12 + 0.35 * beat, 0.9], hand: [0.45, 0.12 + 0.3 * beat, 0.78], fingers: RELAXED };
-  return side === 'L' ? { L: arm } : { R: arm };
-}
-const intensityAmp = () => Number(cfg.gestureIntensity) || 0.85;
-
-const gest = {
-  cur: null, talkSide: 'R', talkSwap: 3, beat: 0,
-  arms: { L: null, R: null }, head: { pitch: 0, tilt: 0 },
-};
-const newArmState = () => ({ w: 0, upper: new THREE.Vector3(0, -1, 0), fore: new THREE.Vector3(0, -1, 0.2), hand: new THREE.Vector3(0, -1, 0.2), fingers: { ...RELAXED }, fw: 0 });
-gest.arms.L = newArmState(); gest.arms.R = newArmState();
-
-function greetGesture() {
-  const g = cfg.greetGesture || 'wave';
-  if (g !== 'none') playGesture(g, { why: 'greeting' });
-}
-function updateBehaviourNote() {
-  const el = $('#behaviour-note');
-  if (!el || !avatar) return;
-  const rig = avatar.rig;
-  el.textContent = !rig ? 'This avatar has no skeleton, so it cannot move its arms. Rigged models from Mixamo, Ready Player Me, VRoid or MakeHuman can.'
-    : !rig.hasArms ? 'This avatar has a head bone but no arm bones the studio recognises, so only nods work.'
-    : avatar.kind === 'robot' ? 'The robot waves and nods with its own animations, and moves its arms for the other gestures. Its three-fingered hands cannot point or count.'
-    : rig.hasFingers ? 'Arms, hands and fingers found.'
-    : 'Arms found, but no finger bones, so pointing and counting use the whole hand.';
-}
-function showGestureChip(label) {
-  const chip = $('#gesture-chip');
-  if (!chip) return;
-  chip.hidden = !label;
-  chip.textContent = label ? `Gesture: ${label.toLowerCase()}` : '';
-}
-function playGesture(name, opts = {}) {
-  const def = GESTURES[name];
-  if (!def || !avatar) return false;
-  const n = Math.max(1, Math.min(5, opts.n || 3));
-  const label = name === 'count' ? `Counting to ${n}` : def.label;
-  // Bodies with their own animations (the robot) use them where they have one.
-  const clip = avatar.clips?.[name];
-  if (clip && avatar.playClip?.(clip)) {
-    gest.cur = { name, t: 0, dur: def.dur, clip: true, label };
-  } else {
-    if (!avatar.rig) { log('body', `This body has no arm bones, so it cannot ${def.label.toLowerCase()}.`); return false; }
-    gest.cur = { name, t: 0, dur: name === 'count' ? 0.9 + n * 0.5 + 0.7 : def.dur, hold: !!opts.hold, n, label };
-  }
-  showGestureChip(label);
-  log('body', `Gesture: ${label}${opts.why ? ` (${opts.why})` : ''}`);
-  return true;
-}
-function releaseGesture(name) {
-  const g = gest.cur;
-  if (g && g.name === name && g.hold) { g.hold = false; g.dur = g.t + 0.35; }
-}
-
-const _v = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
-const _q = [0, 1, 2, 3].map(() => new THREE.Quaternion());
-const IDQ = new THREE.Quaternion();
-function worldDir(a, b, out) { return out.copy(b.getWorldPosition(_v[4])).sub(a.getWorldPosition(_v[5])); }
-// Rotate a bone in world space by quaternion q (around its own pivot).
-function rotateBoneWorld(bone, q) {
-  if (!bone?.parent) return;
-  const wq = bone.getWorldQuaternion(_q[1]).premultiply(q);
-  const pq = bone.parent.getWorldQuaternion(_q[2]).invert();
-  bone.quaternion.copy(pq.multiply(wq));
-  bone.updateMatrixWorld(true);
-}
-function aimBone(bone, child, target, w) {
-  if (!bone || !child || w <= 0.001) return;
-  const d = worldDir(bone, child, _v[0]);
-  if (d.lengthSq() < 1e-10) return;
-  d.normalize();
-  const q = _q[0].setFromUnitVectors(d, target);
-  if (w < 1) q.slerpQuaternions(IDQ, q, w);
-  rotateBoneWorld(bone, q);
-}
-
-// Store each rig bone's resting rotation, and which way its palms face.
-function prepareRig(a) {
-  const rig = a?.rig;
-  if (!rig) return;
-  a.root.updateMatrixWorld(true);
-  rig.rest = [];
-  const keep = (b) => { if (b && !rig.rest.some(([x]) => x === b)) rig.rest.push([b, b.quaternion.clone()]); };
-  keep(rig.head);
-  rig.hasArms = !!(rig.L?.upper && rig.L?.lower && rig.R?.upper && rig.R?.lower);
-  rig.hasFingers = false;
-  for (const side of ['L', 'R']) {
-    const arm = rig[side];
-    if (!arm) continue;
-    [arm.upper, arm.lower, arm.hand].forEach(keep);
-    const f = arm.fingers || {};
-    FINGERS.forEach((k) => (f[k] || []).forEach(({ bone }) => keep(bone)));
-    arm.palmSign = 0;
-    if (!a.noFingers && arm.hand && arm.end && f.index?.[0] && (f.little?.[0] || f.ring?.[0])) {
-      rig.hasFingers = true;
-      const handDir = worldDir(arm.hand, arm.end, new THREE.Vector3());
-      const across = worldDir(f.index[0].bone, (f.little?.[0] || f.ring[0]).bone, new THREE.Vector3());
-      const n = handDir.cross(across);
-      const sideAxis = worldDir(rig.R.upper, rig.L.upper, new THREE.Vector3()).normalize();
-      const out = side === 'L' ? sideAxis : sideAxis.clone().negate();
-      const ref = new THREE.Vector3(0, -1, 0).addScaledVector(out, -0.6);
-      arm.palmSign = n.dot(ref) >= 0 ? 1 : -1;
-    }
-  }
-  log('body', `Body behaviour: ${rig.hasArms ? 'arms' : 'no arms'}${rig.hasFingers ? ', fingers' : ''}${rig.head ? ', head' : ''} found${a.clips ? ', plus its own animations' : ''}.`);
-}
-function resetRig(a) { a?.rig?.rest?.forEach(([b, q]) => b.quaternion.copy(q)); }
-
-const _cf = { hd: new THREE.Vector3(), ac: new THREE.Vector3(), n: new THREE.Vector3(), d: new THREE.Vector3(), prev: new THREE.Vector3(), axis: new THREE.Vector3() };
-function curlFingers(arm, curls, w) {
-  if (!arm.palmSign || w <= 0.001) return;
-  const f = arm.fingers;
-  const handDir = worldDir(arm.hand, arm.end, _cf.hd).normalize();
-  const across = worldDir(f.index[0].bone, (f.little?.[0] || f.ring[0]).bone, _cf.ac);
-  const n = _cf.n.copy(handDir).cross(across).normalize().multiplyScalar(arm.palmSign);
-  for (const k of FINGERS) {
-    const chain = f[k];
-    if (!chain?.length) continue;
-    const c = (curls[k] || 0) * w;
-    if (c < 0.01) continue;
-    const angles = k === 'thumb' ? [0.45, 0.5, 0.45] : [1.15, 1.35, 0.95];
-    let hasPrev = false;
-    chain.forEach((j, i) => {
-      const next = chain[i + 1]?.bone || j.tip;
-      const d = next ? worldDir(j.bone, next, _cf.d) : (hasPrev ? _cf.d.copy(_cf.prev) : null);
-      if (!d || d.lengthSq() < 1e-12) return;
-      d.normalize();
-      _cf.prev.copy(d); hasPrev = true;
-      const axis = _cf.axis.copy(d).cross(n);
-      if (axis.lengthSq() < 1e-8) return;
-      axis.normalize();
-      rotateBoneWorld(j.bone, _q[3].setFromAxisAngle(axis, c * angles[Math.min(i, 2)]));
-    });
-  }
-}
-
-function updateGestures(dt, f) {
-  const a = avatar;
-  const rig = a?.rig;
-  if (!rig) return;
-  // What the arms should do now: a gesture if one is playing, otherwise talking hands while speaking.
-  let pose = {};
-  const g = gest.cur;
-  let env = 0;
-  if (g) {
-    g.t += dt;
-    if (!g.hold && g.t >= g.dur) { gest.cur = null; showGestureChip(''); }
-    else if (!g.clip) {
-      env = Math.min(1, g.t / 0.35, g.hold ? 1 : (g.dur - g.t) / 0.4);
-      env = env * env * (3 - 2 * env);
-      pose = gesturePose(g, Math.min(1, g.t / g.dur), g.t);
-    }
-  }
-  gest.beat += ((speaking ? f.mouth : 0) - gest.beat) * Math.min(1, dt * 6);
-  const talking = cfg.talkHands && speaking && !gest.cur;
-  if (talking) {
-    gest.talkSwap -= dt;
-    if (gest.talkSwap <= 0) { gest.talkSide = Math.random() < 0.35 ? (gest.talkSide === 'L' ? 'R' : 'L') : gest.talkSide; gest.talkSwap = 2 + Math.random() * 2.5; }
-    pose = talkPose(gest.beat, gest.talkSide);
-    env = 0.55 * intensityAmp() * Math.min(1, 0.35 + gest.beat * 1.4);
-  }
-  // Body frame from the skeleton itself: out to the left, up, forward.
-  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(a.root.getWorldQuaternion(new THREE.Quaternion()));
-  let left = null;
-  if (rig.hasArms) {
-    left = worldDir(rig.R.upper, rig.L.upper, new THREE.Vector3());
-    left.addScaledVector(up, -left.dot(up)).normalize();
-  }
-  const fwd = left ? new THREE.Vector3().crossVectors(left, up) : null;
-  const toWorld = (v, out, dst) => dst.set(0, 0, 0).addScaledVector(out, v.x).addScaledVector(up, v.y).addScaledVector(fwd, v.z).normalize();
-  const rate = Math.min(1, dt * 9);
-  if (rig.hasArms) {
-    for (const side of ['L', 'R']) {
-      const st = gest.arms[side];
-      const want = pose[side];
-      const goalW = want ? env : 0;
-      st.w += (goalW - st.w) * rate;
-      if (want) {
-        const goal = new THREE.Vector3();
-        st.upper.lerp(goal.set(...want.upper).normalize(), rate).normalize();
-        st.fore.lerp(goal.set(...want.fore).normalize(), rate).normalize();
-        st.hand.lerp(goal.set(...want.hand).normalize(), rate).normalize();
-      }
-      const fingerGoal = want?.fingers || RELAXED;
-      for (const k of FINGERS) st.fingers[k] += ((fingerGoal[k] || 0) - st.fingers[k]) * rate;
-      const arm = rig[side];
-      const out = side === 'L' ? left : left.clone().negate();
-      const t3 = new THREE.Vector3();
-      if (st.w > 0.002) {
-        aimBone(arm.upper, arm.lower, toWorld(st.upper, out, t3), st.w);
-        aimBone(arm.lower, arm.hand, toWorld(st.fore, out, t3), st.w);
-        if (arm.end) aimBone(arm.hand, arm.end, toWorld(st.hand, out, t3), st.w);
-      }
-      if (rig.hasFingers) curlFingers(arm, st.fingers, 1);
-    }
-  }
-  // Head: nods and tilts on top of the face's own movement.
-  const hp = pose.head?.pitch || 0, ht = pose.head?.tilt || 0;
-  gest.head.pitch += (hp * env - gest.head.pitch) * rate;
-  gest.head.tilt += (ht * env - gest.head.tilt) * rate;
-  if (rig.head && left && (Math.abs(gest.head.pitch) > 0.001 || Math.abs(gest.head.tilt) > 0.001)) {
-    rotateBoneWorld(rig.head, _q[3].setFromAxisAngle(left, gest.head.pitch));
-    rotateBoneWorld(rig.head, _q[3].setFromAxisAngle(fwd, gest.head.tilt));
-  } else if (rig.head && !left && Math.abs(gest.head.pitch) > 0.001) {
-    rotateBoneWorld(rig.head, _q[3].setFromAxisAngle(_v[2].set(1, 0, 0), gest.head.pitch));
-  }
-}
-
-// Choose a gesture for a reply: a tag the brain chose, else a cue in the words, else the emotion.
-const NUM_WORDS = { two: 2, three: 3, four: 4, five: 5 };
-function gestureForReply(emotion, text, tagged) {
-  if (tagged && cfg.brainGestures) { playGesture(tagged.name, { n: tagged.n, why: 'chosen by the brain' }); return; }
-  if (!cfg.emotionGestures) return;
-  const num = text.match(/\b([2-5]|two|three|four|five)\b/i);
-  if (num && avatar?.rig?.hasFingers) { playGesture('count', { n: NUM_WORDS[num[1].toLowerCase()] || Number(num[1]), why: `the reply mentions "${num[1]}"` }); return; }
-  if (/\b(over there|this way|that way|upstairs|downstairs|(first|second|ground|top) floor|front desk|counter|on your (left|right)|to (the|your) (left|right)|next door|entrance|outside)\b/i.test(text)) { playGesture('point', { why: 'the reply gives a direction' }); return; }
-  const byEmotion = { happy: 'palms', surprised: 'palms', concerned: 'shrug', sad: 'nod' }[emotion];
-  if (byEmotion) playGesture(byEmotion, { why: `feeling ${emotion}` });
-  if (emotion === 'surprised') avatar?.react?.('surprised');
-}
-
 let avatar = null;
 let avatarSource = null; // { name, blob } of a loaded avatar file, for saving and export
 function setAvatar(next) {
   if (avatar) { scene.remove(avatar.root); avatar.dispose?.(); }
   avatar = next;
   scene.add(avatar.root);
-  gest.cur = null; showGestureChip('');
-  gest.arms.L = newArmState(); gest.arms.R = newArmState();
-  prepareRig(avatar);
-  updateBehaviourNote();
-  refreshPrompt();
   if (xrActive) avatar.root.visible = false;
   frame();
   $('#avatar-kind').textContent = { builtin: 'Built-in, stylised', robot: 'Built-in, non-human', vrm: 'Your VRM avatar', glb: 'Your GLB avatar' }[avatar.kind];
@@ -1666,8 +1250,6 @@ function setEmotion(name) {
   if (!EMOTIONS.includes(name)) name = 'neutral';
   if (face.target !== name) log('face', `Expression: ${name}`);
   face.target = name;
-  const chip = $('#emotion-chip');
-  if (chip) { chip.dataset.mood = name; chip.textContent = `Feeling: ${name}`; }
 }
 function visemeFor(word) {
   const m = (word || '').toLowerCase().match(/[aeiouy]/);
@@ -1729,13 +1311,7 @@ function tick(time, xrFrame) {
     goal = 0.25 + 0.45 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.1)) + mouthPulse * 0.3;
   }
   face.mouth += (goal - face.mouth) * Math.min(1, dt * 18);
-  try {
-    resetRig(avatar);
-    avatar?.update(dt, face);
-    updateGestures(dt, face);
-  } catch (err) { // a body problem must never freeze the whole studio
-    if (!tick.failed) { tick.failed = true; console.error(err); log('body', `Body animation error: ${err.message}`, true); }
-  }
+  avatar?.update(dt, face);
 
   if (xrActive && xrFrame && hitSource) {
     const refSpace = renderer.xr.getReferenceSpace();
@@ -2248,35 +1824,12 @@ function buildPrompt() {
     c.style && `How you speak: ${c.style}`,
     c.knowledge && `What you know. Use this first, and say so when a question is not covered:\n"""\n${c.knowledge}\n"""`,
     c.boundaries && `Your boundaries: ${c.boundaries}`,
-    bodyAwareness(),
     `Rules for a spoken, embodied conversation:
 - Reply in ${c.language || 'English'}.
 - Keep each reply short: one to three sentences, like natural speech. No lists, no markdown, no emoji.
 - Start every reply with exactly one emotion tag from this list: [neutral] [happy] [sad] [surprised] [thinking] [concerned]. The tag sets your facial expression and is not read aloud.
 - If you do not know something, say so plainly. Never invent facts.`,
   ].filter(Boolean).join('\n\n');
-}
-// The agent is told what body it has and what that body can do, so its words and its body agree.
-function bodyAwareness() {
-  const kind = avatar?.kind;
-  const body = kind === 'robot' ? 'a small, friendly robot body' : kind === 'builtin' ? 'a cartoon, human-like body' : kind ? 'a 3D avatar body' : 'a 3D body';
-  const rig = avatar?.rig;
-  const can = [];
-  can.push('your face shows the emotion you choose');
-  if (rig?.head) can.push('you can nod and tilt your head');
-  if (rig?.hasArms) {
-    if (cfg.talkHands) can.push('your hands move as you speak');
-    if (cfg.emotionGestures) can.push('you put a hand to your chin while you think');
-  }
-  const lines = [`Your body: you have ${body}, standing in front of the person. ${can.join(', ').replace(/^./, (x) => x.toUpperCase())}.`];
-  if (cfg.brainGestures && rig?.hasArms) {
-    const list = ['[wave]', '[namaste]', '[point]', '[open palms]', '[shrug]', '[chin]', '[nod]'];
-    if (rig.hasFingers) list.push('[count:N] (N from 1 to 5, counts on your fingers)');
-    lines.push(`You may make one gesture per reply. Put its tag straight after the emotion tag: ${list.join(' ')}. Use a gesture only when a person would naturally make it, such as waving hello, pointing when giving directions, or counting when listing a number. Most replies need no gesture. Gesture tags are not read aloud.`);
-  } else if (rig?.hasArms && !cfg.emotionGestures && !cfg.talkHands) {
-    lines.push('Your arms stay still for now.');
-  }
-  return lines.join('\n');
 }
 function refreshPrompt() { $('#prompt-preview').textContent = buildPrompt(); }
 
@@ -2290,18 +1843,11 @@ function markVoiceStart() {
   log('voice', `Reply started ${total.toFixed(1)} s after your turn ended: brain ${turnBrainS.toFixed(1)} s, voice ${(total - turnBrainS).toFixed(1)} s`);
 }
 
-const GESTURE_TAG = /\[\s*(?:gesture\s*:\s*)?(wave|namaste|point|open palms|palms|shrug|chin|hand to chin|nod|count(?:\s*:\s*([1-5]))?)\s*\]/i;
 function parseReply(raw) {
   const m = raw.match(/^\s*\[(\w+)\]\s*/);
   const emotion = m ? m[1].toLowerCase() : 'neutral';
-  const g = raw.match(GESTURE_TAG);
-  let gesture = null;
-  if (g) {
-    const k = g[1].toLowerCase();
-    gesture = { name: k.startsWith('count') ? 'count' : k === 'open palms' ? 'palms' : k === 'hand to chin' ? 'chin' : k, n: Number(g[2]) || 3 };
-  }
-  const text = raw.replace(/\[(neutral|happy|sad|surprised|thinking|concerned)\]/gi, '').replace(new RegExp(GESTURE_TAG.source, 'gi'), '').replace(/[*_#`]/g, '').replace(/\s{2,}/g, ' ').trim();
-  return { emotion, text, gesture };
+  const text = raw.replace(/\[(neutral|happy|sad|surprised|thinking|concerned)\]/gi, '').replace(/[*_#`]/g, '').trim();
+  return { emotion, text };
 }
 
 const STOP = new Set('the and for are you your what when where which who how does did can could would should with from this that have has about there their them they into out our any some like just get got tell please want need know'.split(' '));
@@ -2458,7 +2004,6 @@ async function converse(userText) {
   history = history.slice(-12);
   setState('thinking');
   setEmotion('thinking');
-  if (cfg.emotionGestures) playGesture('chin', { hold: true, why: 'thinking' });
   const messages = [{ role: 'system', content: buildPrompt() }, ...history];
   const model = cfg.provider === 'rehearsal' ? 'rehearsal script' : (cfg.model || PROVIDERS[cfg.provider].model);
   log('brain', `Sent ${messages.length} messages to ${model}`);
@@ -2467,20 +2012,17 @@ async function converse(userText) {
   try {
     const raw = await think(messages);
     turnBrainS = (performance.now() - t0) / 1000;
-    const { emotion, text, gesture } = parseReply(raw);
-    releaseGesture('chin');
+    const { emotion, text } = parseReply(raw);
     log('brain', `Replied in ${((performance.now() - t0) / 1000).toFixed(1)} s: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}"`);
     history.push({ role: 'assistant', content: raw.trim() });
     setEmotion(emotion);
-    if (gesture) log('brain', `Chose the gesture: ${gesture.name}${gesture.name === 'count' ? ` ${gesture.n}` : ''}`);
-    gestureForReply(emotion, text, gesture);
+    avatar?.react?.(emotion);
     showAgent(text);
     await speak(text, emotion);
   } catch (err) {
     const msg = friendlyError(err);
     log('brain', `${msg}${err.status ? ` (HTTP ${err.status})` : ''}`, true);
     history.pop();
-    releaseGesture('chin');
     setEmotion('concerned');
     showAgent(msg, true);
     turnVoiced = true;
@@ -2506,7 +2048,7 @@ async function greet() {
   getAudio();
   $('#start-btn').hidden = true;
   setEmotion('happy');
-  greetGesture();
+  avatar?.react?.('greet');
   showAgent(cfg.greeting);
   history = [{ role: 'assistant', content: `[happy] ${cfg.greeting}` }];
   await speak(cfg.greeting, 'happy');
@@ -2514,15 +2056,6 @@ async function greet() {
   if (cfg.listenMode !== 'push' && SR) startConvo();
 }
 $('#start-btn').onclick = greet;
-// For the curious: try these from the browser console, e.g. studio.gesture('wave') or studio.gesture('count', 4).
-window.studio = {
-  gesture: (name, n) => playGesture(name, { n, why: 'from the console' }),
-  emotion: (name) => setEmotion(name),
-  get avatar() { return avatar; },
-  get gestureState() { return gest; },
-  loadAvatarUrl: async (url) => loadAvatarBlob(await (await fetch(url)).blob(), url.split('/').pop().split('?')[0]),
-};
-$$('#try-gestures [data-g]').forEach((b) => { b.onclick = () => { getAudio(); playGesture(b.dataset.g, { n: Number(b.dataset.n) || 3, why: 'tried from the Body tab' }); }; });
 $('#reset-chat').onclick = () => { stopConvo(); history = []; $('#cap-user').hidden = true; $('#cap-agent').hidden = true; $('#start-btn').hidden = false; log('brain', 'Started a new conversation'); };
 
 $('#test-brain').onclick = async () => {
@@ -2761,7 +2294,7 @@ function placeAvatar() {
   avatar.root.rotation.set(0, Math.atan2(viewerPos.x - pos.x, viewerPos.z - pos.z), 0);
   avatar.root.scale.setScalar(cfg.arSize === 'table' ? 0.22 : 1);
   avatar.root.visible = true;
-  if (!placed) { placed = true; $('#ar-hint').hidden = true; greetGesture(); log('stage', 'Agent placed in the room'); }
+  if (!placed) { placed = true; $('#ar-hint').hidden = true; avatar.react?.('greet'); log('stage', 'Agent placed in the room'); }
 }
 function endAR() {
   hitSource?.cancel?.();
