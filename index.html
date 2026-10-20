@@ -737,8 +737,8 @@ const PROVIDERS = {
   gemini: {
     label: 'Google Gemini',
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    model: 'gemini-3.8-flash',
-    keyHint: 'Free key from Google AI Studio: aistudio.google.com/apikey',
+    model: 'gemini-3.5-flash-lite', // answers in about a second; the bigger flash models can take 5 to 30 s on the free tier
+    keyHint: 'Free key from Google AI Studio: aistudio.google.com/apikey. The default "lite" model is the quickest to answer; a bigger model such as gemini-3.8-flash thinks harder but can take many seconds.',
   },
   groq: {
     label: 'Groq',

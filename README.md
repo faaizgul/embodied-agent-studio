@@ -56,7 +56,7 @@ The agent pauses its ears while it speaks, so it does not hear itself. Press the
 
 **When it decides you have finished.** The studio does not wait for the browser to decide that a sentence is over, which can take several seconds. When your words stop changing for a set pause (0.6, 1 or 1.6 seconds, in the Voice tab), the turn ends and the agent replies. Shorter feels snappier but may cut people off.
 
-**Why a reply takes time.** Each turn has three waits: the pause before your turn ends, the brain thinking, and the voice starting. The *Behind the scenes* tab shows all three for every reply. For the quickest conversation, use Groq for the brain and a browser voice.
+**Why a reply takes time.** Each turn has three waits: the pause before your turn ends, the brain thinking, and the voice starting. The *Behind the scenes* tab shows all three for every reply. For the quickest conversation, keep a "lite" Gemini model or Groq for the brain, and use a browser voice. Bigger "thinking" models such as `gemini-3.8-flash` can take 5 to 30 seconds per reply on the free tier, which feels broken in a spoken conversation.
 
 **Voices**
 
@@ -67,7 +67,7 @@ The agent pauses its ears while it speaks, so it does not hear itself. Press the
 
 | Provider | Where to get a key | Default model in the studio |
 | --- | --- | --- |
-| Google Gemini | aistudio.google.com/apikey | `gemini-3.8-flash` (brain), `gemini-3.8-flash-tts` (voice) |
+| Google Gemini | aistudio.google.com/apikey | `gemini-3.5-flash-lite` (brain, answers in about a second), `gemini-3.8-flash-tts` (voice) |
 | Groq | console.groq.com/keys | `llama-3.3-70b-versatile` (usually the quickest) |
 | Anthropic Claude (paid) | console.anthropic.com, with prepaid credits | `claude-haiku-5-5` |
 | OpenAI (paid) | platform.openai.com, with prepaid credits | `gpt-6-luna` |
