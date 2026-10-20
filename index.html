@@ -1729,9 +1729,13 @@ function tick(time, xrFrame) {
     goal = 0.25 + 0.45 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.1)) + mouthPulse * 0.3;
   }
   face.mouth += (goal - face.mouth) * Math.min(1, dt * 18);
-  resetRig(avatar);
-  avatar?.update(dt, face);
-  updateGestures(dt, face);
+  try {
+    resetRig(avatar);
+    avatar?.update(dt, face);
+    updateGestures(dt, face);
+  } catch (err) { // a body problem must never freeze the whole studio
+    if (!tick.failed) { tick.failed = true; console.error(err); log('body', `Body animation error: ${err.message}`, true); }
+  }
 
   if (xrActive && xrFrame && hitSource) {
     const refSpace = renderer.xr.getReferenceSpace();
