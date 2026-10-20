@@ -9,7 +9,7 @@ Built for teaching design students how an embodied AI agent is put together. Eve
 | Layer | What it does | Runs on |
 | --- | --- | --- |
 | 1. Body | A 3D avatar with blinking, idle movement, facial expressions, gestures and lip movement | three.js and three-vrm, in the browser |
-| 2. Brain | A large language model that follows a character sheet you write | Google Gemini or Groq free tier (your own key), or rehearsal mode with no key |
+| 2. Brain | A large language model that follows a character sheet you write | Google Gemini or Groq free tier (your own key), Claude or OpenAI (paid key), or rehearsal mode with no key |
 | 3. Voice | Ears (speech to text) and a mouth (text to speech), with three listening modes | The browser's Web Speech API, or the Gemini voice |
 | 4. Stage | Save, share, embed, and bring the agent into the room on a phone | Any browser; free hosting such as GitHub Pages |
 
@@ -54,6 +54,10 @@ Where to get your own avatar for free:
 
 The agent pauses its ears while it speaks, so it does not hear itself. Press the mic while it is talking to interrupt it.
 
+**When it decides you have finished.** The studio does not wait for the browser to decide that a sentence is over, which can take several seconds. When your words stop changing for a set pause (0.6, 1 or 1.6 seconds, in the Voice tab), the turn ends and the agent replies. Shorter feels snappier but may cut people off.
+
+**Why a reply takes time.** Each turn has three waits: the pause before your turn ends, the brain thinking, and the voice starting. The *Behind the scenes* tab shows all three for every reply. For the quickest conversation, use Groq for the brain and a browser voice.
+
 **Voices**
 
 - **Browser voice** (free, instant): in **Microsoft Edge**, choose a voice marked *natural*, such as an "Online (Natural)" English (India) voice. Chrome on Windows only offers older, more robotic voices.
@@ -64,7 +68,11 @@ The agent pauses its ears while it speaks, so it does not hear itself. Press the
 | Provider | Where to get a key | Default model in the studio |
 | --- | --- | --- |
 | Google Gemini | aistudio.google.com/apikey | `gemini-3.8-flash` (brain), `gemini-3.8-flash-tts` (voice) |
-| Groq | console.groq.com/keys | `llama-3.3-70b-versatile` |
+| Groq | console.groq.com/keys | `llama-3.3-70b-versatile` (usually the quickest) |
+| Anthropic Claude (paid) | console.anthropic.com, with prepaid credits | `claude-haiku-5-5` |
+| OpenAI (paid) | platform.openai.com, with prepaid credits | `gpt-6-luna` |
+
+Claude and OpenAI keys are paid API keys. A Claude Pro or Max plan, or a ChatGPT Go, Plus or Pro plan, does not include API use: API keys are billed separately, by use.
 
 Model names change often. If the studio says a model was not found, copy the current free model name from the provider's site into the **Model** box.
 

@@ -372,6 +372,8 @@ details > .guide, details > .lede { margin-top: 4px; }
           <select id="kd-provider">
             <option value="gemini">Google Gemini (aistudio.google.com/apikey)</option>
             <option value="groq">Groq (console.groq.com/keys)</option>
+            <option value="claude">Anthropic Claude, paid (console.anthropic.com)</option>
+            <option value="openai">OpenAI, paid (platform.openai.com)</option>
           </select>
         </div>
         <div class="field">
@@ -508,7 +510,9 @@ details > .guide, details > .lede { margin-top: 4px; }
           <select id="f-provider" data-cfg="provider">
             <option value="rehearsal">Rehearsal mode (no key, scripted)</option>
             <option value="gemini">Google Gemini (free tier)</option>
-            <option value="groq">Groq (free tier)</option>
+            <option value="groq">Groq (free tier, fastest)</option>
+            <option value="claude">Anthropic Claude (paid API key)</option>
+            <option value="openai">OpenAI (paid API key)</option>
             <option value="custom">Other OpenAI-compatible service</option>
           </select>
         </div>
@@ -567,6 +571,15 @@ details > .guide, details > .lede { margin-top: 4px; }
             <option value="wake">Always listening: answers when it hears its name</option>
           </select>
           <span class="hint" id="listenmode-hint"></span>
+        </div>
+        <div class="field">
+          <label for="f-endpause">When it decides you have finished</label>
+          <select id="f-endpause" data-cfg="endPause">
+            <option value="0.6">After a short pause (0.6 s): snappy, may cut you off</option>
+            <option value="1">After a normal pause (1 s)</option>
+            <option value="1.6">After a long pause (1.6 s): patient, for slow or thoughtful speakers</option>
+          </select>
+          <span class="hint">Turn-taking is a design choice: people expect a reply within about a second, but nobody likes being interrupted.</span>
         </div>
 
         <div class="group-title">Mouth (text to speech)</div>
@@ -722,16 +735,30 @@ if (params.has('embed')) document.body.classList.add('embed');
 const PROVIDERS = {
   rehearsal: { needsKey: false },
   gemini: {
+    label: 'Google Gemini',
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     model: 'gemini-3.8-flash',
     keyHint: 'Free key from Google AI Studio: aistudio.google.com/apikey',
   },
   groq: {
+    label: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     model: 'llama-3.3-70b-versatile',
-    keyHint: 'Free key from console.groq.com/keys',
+    keyHint: 'Free key from console.groq.com/keys. Usually the quickest brain to reply.',
   },
-  custom: { url: '', model: '', keyHint: 'Any service that offers an OpenAI-compatible chat completions endpoint.' },
+  claude: {
+    label: 'Anthropic Claude',
+    url: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-haiku-5-5',
+    keyHint: 'Paid: create a key at console.anthropic.com and add prepaid credits. A Claude Pro or Max plan does not include API use. Haiku is the fastest Claude model.',
+  },
+  openai: {
+    label: 'OpenAI',
+    url: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-6-luna',
+    keyHint: 'Paid: create a key at platform.openai.com and add prepaid credits. ChatGPT Go, Plus and Pro plans do not include API use.',
+  },
+  custom: { label: 'your service', url: '', model: '', keyHint: 'Any service that offers an OpenAI-compatible chat completions endpoint.' },
 };
 const GEMINI_VOICES = ['Kore', 'Puck', 'Zephyr', 'Charon', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirrhoe', 'Autonoe', 'Enceladus', 'Iapetus', 'Umbriel', 'Algieba', 'Despina', 'Erinome', 'Algenib', 'Rasalgethi', 'Laomedeia', 'Achernar', 'Alnilam', 'Schedar', 'Gacrux', 'Pulcherrima', 'Achird', 'Zubenelgenubi', 'Vindemiatrix', 'Sadachbia', 'Sadaltager', 'Sulafat'];
 const ROBOT_URLS = [
@@ -754,6 +781,7 @@ const DEFAULTS = {
   customUrl: '',
   listenLang: 'en-IN',
   listenMode: 'push',
+  endPause: '1',
   voiceSource: 'browser',
   voiceName: '',
   geminiVoice: 'Kore',
@@ -1354,6 +1382,7 @@ function speakBrowser(text) {
         face.viseme = visemeFor(w);
         mouthPulse = 1;
       };
+      u.onstart = markVoiceStart;
       u.onend = go;
       u.onerror = go;
       speechSynthesis.speak(u);
@@ -1478,7 +1507,7 @@ async function speakGeminiStream(text, style) {
     total += buf.duration;
     streamSources.push(src);
     lastEnded = new Promise((r) => { src.onended = r; });
-    if (first) { first = false; audioSpeaking = true; log('voice', `Gemini voice ${cfg.geminiVoice} started after ${((performance.now() - t0) / 1000).toFixed(1)} s (streaming)`); }
+    if (first) { first = false; audioSpeaking = true; markVoiceStart(); log('voice', `Gemini voice ${cfg.geminiVoice} started after ${((performance.now() - t0) / 1000).toFixed(1)} s (streaming)`); }
   };
   const handleLine = (line) => {
     line = line.trim();
@@ -1527,6 +1556,7 @@ async function speakGemini(text, emotion) {
     currentSource = src;
     currentDone = resolve;
     audioSpeaking = true;
+    markVoiceStart();
     src.start();
   });
 }
@@ -1629,6 +1659,10 @@ function stopConvo(note) {
   if (note) { log('ear', note); $('#mic-note').hidden = false; $('#mic-note').textContent = note; }
 }
 
+const pauseMs = () => (Number(cfg.endPause) || 1) * 1000;
+
+/* Turn-taking: the browser is slow to decide that you have finished a sentence, so the studio
+   decides itself. When the words stop changing for the chosen pause, the turn is over. */
 function listenOnce() {
   if (!SR || busy) return;
   stopSpeaking();
@@ -1637,44 +1671,76 @@ function listenOnce() {
   rec = new SR();
   rec.lang = cfg.listenLang;
   rec.interimResults = true;
-  rec.continuous = false;
-  let finalText = '';
-  rec.onresult = (e) => {
+  rec.continuous = true;
+  let text = '', quietTimer = 0;
+  const idleTimer = setTimeout(() => { if (id === recId && !text.trim()) { try { rec?.stop(); } catch { /* ended */ } } }, 9000);
+  const finish = (how) => {
     if (id !== recId) return;
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i];
-      if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
-    }
-    showUser(finalText + interim);
-  };
-  rec.onerror = (e) => {
-    if (id !== recId) return;
-    if (e.error === 'aborted') return;
-    if (e.error === 'no-speech' && convoOn) return; // handled in onend
-    const why = micErrorText(e.error);
-    log('ear', why, true);
-    showAgent(why, true);
-    if (convoOn) stopConvo();
-  };
-  rec.onend = () => {
-    if (id !== recId) return;
-    listening = false; rec = null;
-    updateMic();
+    clearTimeout(quietTimer); clearTimeout(idleTimer);
+    const said = text.trim();
+    pauseEars();
     if (!busy) setState('idle');
-    const said = finalText.trim();
-    if (said) { quietCount = 0; log('ear', `Heard: "${said}"`); converse(said); return; }
+    if (said) {
+      quietCount = 0;
+      log('ear', `Heard: "${said}"${how ? ` (${how})` : ''}`);
+      converse(said);
+      return;
+    }
     if (convoOn) {
+      if (cfg.listenMode === 'wake') { resumeEars(100); return; }
       quietCount++;
       if (quietCount >= 3) stopConvo('Hands-free paused after a quiet spell. Press the mic to carry on.');
       else resumeEars(150);
     }
   };
-  rec.start();
+  rec.onresult = (e) => {
+    if (id !== recId) return;
+    let t = '';
+    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    text = t;
+    showUser(t);
+    clearTimeout(quietTimer);
+    if (t.trim()) quietTimer = setTimeout(() => finish(`you paused for ${cfg.endPause || 1} s`), pauseMs());
+  };
+  rec.onerror = (e) => {
+    if (id !== recId) return;
+    if (e.error === 'aborted') return;
+    if (e.error === 'no-speech') { if (!convoOn) { log('ear', micErrorText(e.error)); showAgent(micErrorText(e.error), true); } return; } // onend follows
+    const why = micErrorText(e.error);
+    log('ear', why, true);
+    showAgent(why, true);
+    if (convoOn) stopConvo();
+  };
+  rec.onend = () => finish(''); // the browser ended on its own, or the mic was pressed again
+  try { rec.start(); } catch { /* already started */ }
   listening = true;
   updateMic();
   setState('listening');
   log('ear', `Listening (${cfg.listenLang})`);
+}
+
+/* Always listening: find the agent's name, allowing for near misses ("Ira" heard as "Era" or "Aira"). */
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+function findName(text) {
+  const name = wakeWord().toLowerCase().normalize('NFKD').replace(/[^\p{L}]/gu, '');
+  if (!name) return null;
+  const allowed = name.length >= 6 ? 2 : name.length >= 3 ? 1 : 0;
+  let hit = null;
+  for (const m of text.matchAll(/[\p{L}']+/gu)) {
+    const w = m[0].toLowerCase().normalize('NFKD').replace(/[^\p{L}]/gu, '');
+    const close = w === name
+      || (w.length >= name.length - 1 && Math.abs(w.length - name.length) <= 2 && editDistance(w, name) <= allowed)
+      || (name.length >= 4 && w.startsWith(name.slice(0, 4)));
+    if (close) hit = { index: m.index, end: m.index + m[0].length, word: m[0] };
+  }
+  return hit; // the last mention counts: anything said before it is not meant for the agent
 }
 
 function listenWake() {
@@ -1685,26 +1751,32 @@ function listenWake() {
   rec.lang = cfg.listenLang;
   rec.interimResults = true;
   rec.continuous = true;
-  const name = wakeWord().toLowerCase();
-  const nameRe = new RegExp(`\\b(${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|${name.slice(0, 3)}\\w{0,3})\\b[,.!?]?\\s*`, 'i');
+  let from = 0, count = 0, text = '', quietTimer = 0;
+  const handleHeard = (q, note) => { pauseEars(); log('ear', `Heard: "${q}"${note ? ` (${note})` : ''}`); converse(q); };
+  const decide = () => {
+    if (id !== recId) return;
+    const t = text.trim();
+    const m = findName(t);
+    if (!m) { from = count; text = ''; return; } // talk not meant for the agent: let it go
+    const question = t.slice(m.end).replace(/^[\s,.!?]+/, '').trim();
+    if (question.split(/\s+/).filter(Boolean).length >= 2) { handleHeard(question, `heard its name as "${m.word}"`); return; }
+    // Only the name: answer "Yes?" and take the next sentence as the question.
+    log('ear', `Heard its name as "${m.word}". Waiting for the question.`);
+    pauseEars();
+    showAgent('Yes?');
+    setEmotion('happy');
+    setTimeout(() => { if (convoOn && !busy && !speaking) listenOnce(); }, 50);
+  };
   rec.onresult = (e) => {
     if (id !== recId) return;
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i];
-      const text = r[0].transcript.trim();
-      if (!r.isFinal) { if (awaitingQuestion > Date.now() || nameRe.test(text)) showUser(text); continue; }
-      if (awaitingQuestion > Date.now()) { awaitingQuestion = 0; handleHeard(text); return; }
-      const m = text.match(nameRe);
-      if (!m) continue;
-      const question = text.slice(m.index + m[0].length).trim();
-      log('ear', `Heard its name in: "${text}"`);
-      if (question.split(/\s+/).length >= 2) { handleHeard(question); return; }
-      awaitingQuestion = Date.now() + 8000;
-      showUser(text);
-      showAgent('Yes?');
-    }
+    count = e.results.length;
+    let t = '';
+    for (let i = from; i < e.results.length; i++) t += e.results[i][0].transcript;
+    text = t;
+    if (findName(t)) showUser(t);
+    clearTimeout(quietTimer);
+    if (t.trim()) quietTimer = setTimeout(decide, pauseMs());
   };
-  const handleHeard = (q) => { pauseEars(); log('ear', `Heard: "${q}"`); converse(q); };
   rec.onerror = (e) => {
     if (id !== recId) return;
     if (['aborted', 'no-speech'].includes(e.error)) return;
@@ -1715,11 +1787,12 @@ function listenWake() {
   };
   rec.onend = () => {
     if (id !== recId) return;
+    clearTimeout(quietTimer);
     listening = false; rec = null;
-    if (convoOn) resumeEars(200); // the browser ends long sessions on its own; start again
+    if (convoOn) resumeEars(100); // the browser ends long sessions on its own; start again
     else { updateMic(); setState('idle'); }
   };
-  rec.start();
+  try { rec.start(); } catch { /* already started */ }
   listening = true;
   updateMic();
   setState('wake');
@@ -1762,6 +1835,13 @@ function refreshPrompt() { $('#prompt-preview').textContent = buildPrompt(); }
 
 let history = [];
 let busy = false;
+let turnT0 = 0, turnBrainS = 0, turnVoiced = true;
+function markVoiceStart() {
+  if (turnVoiced || !turnT0) return;
+  turnVoiced = true;
+  const total = (performance.now() - turnT0) / 1000;
+  log('voice', `Reply started ${total.toFixed(1)} s after your turn ended: brain ${turnBrainS.toFixed(1)} s, voice ${(total - turnBrainS).toFixed(1)} s`);
+}
 
 function parseReply(raw) {
   const m = raw.match(/^\s*\[(\w+)\]\s*/);
@@ -1792,11 +1872,13 @@ function rehearsalReply(userText) {
 
 class BrainError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
 
-async function callOpenAICompatible(url, key, model, messages, extra = {}) {
+async function callOpenAICompatible(url, key, model, messages, extra = {}, omit = []) {
+  const body = { model, messages, max_tokens: 800, temperature: 0.7, ...extra };
+  omit.forEach((k) => delete body[k]);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, max_tokens: 800, temperature: 0.7, ...extra }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     let detail = '';
@@ -1828,6 +1910,39 @@ async function callGeminiNative(key, model, messages) {
   return text;
 }
 
+async function callClaude(key, model, messages) {
+  const system = messages.find((m) => m.role === 'system')?.content || '';
+  const turns = [];
+  messages.filter((m) => m.role !== 'system').forEach((m) => {
+    const last = turns[turns.length - 1];
+    if (last && last.role === m.role) last.content += '\n' + m.content; // Claude needs turns to alternate
+    else turns.push({ role: m.role, content: m.content });
+  });
+  if (turns[0]?.role === 'assistant') turns.unshift({ role: 'user', content: '(A visitor walks up to you.)' });
+  const res = await fetch(PROVIDERS.claude.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true', // allows a call straight from the browser with the visitor's own key
+    },
+    body: JSON.stringify({ model, max_tokens: 800, system, messages: turns }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch { /* ignore */ }
+    throw new BrainError(detail || res.statusText, res.status);
+  }
+  const j = await res.json();
+  const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  if (!text) throw new BrainError('The model returned an empty reply.', 200);
+  return text;
+}
+
+const geminiEffort = {}; // the lightest thinking setting each Gemini model accepted
+const isParamError = (err) => err.status === 400 && /unsupported|not supported|unrecognized|unknown (parameter|field|name)|invalid.*(temperature|max_tokens|reasoning)/i.test(err.message);
+
 const needsKey = () => cfg.provider !== 'rehearsal' && !keyFor(cfg.provider);
 
 async function think(messages) {
@@ -1841,16 +1956,31 @@ async function think(messages) {
   const model = cfg.model || PROVIDERS[p].model;
   const url = p === 'custom' ? cfg.customUrl : PROVIDERS[p].url;
   if (!url) throw new BrainError('Add the chat completions URL for your service in the Brain tab.', 0);
+  if (p === 'claude') return callClaude(key, model, messages);
   if (p === 'gemini') {
-    try {
-      return await callOpenAICompatible(url, key, model, messages, { reasoning_effort: 'low' });
-    } catch (err) {
-      if (err.status === 400 && /reasoning/i.test(err.message)) return callOpenAICompatible(url, key, model, messages);
-      if (!(err instanceof BrainError)) return callGeminiNative(key, model, messages); // network or CORS problem: try Gemini's own API
-      throw err;
+    // Less thinking means a quicker spoken reply. Try the lightest setting first and remember what works.
+    const known = geminiEffort[model];
+    const tries = known !== undefined ? [known] : ['minimal', 'low', null];
+    for (const effort of tries) {
+      try {
+        const out = await callOpenAICompatible(url, key, model, messages, effort ? { reasoning_effort: effort } : {});
+        geminiEffort[model] = effort;
+        return out;
+      } catch (err) {
+        if (err.status === 400 && /reasoning|thinking|effort/i.test(err.message) && effort !== tries[tries.length - 1]) continue;
+        if (!(err instanceof BrainError)) return callGeminiNative(key, model, messages); // network or CORS problem: try Gemini's own API
+        throw err;
+      }
     }
   }
-  return callOpenAICompatible(url, key, model, messages);
+  const extra = p === 'openai' ? { max_completion_tokens: 800 } : {};
+  const omit = p === 'openai' ? ['max_tokens', 'temperature'] : [];
+  try {
+    return await callOpenAICompatible(url, key, model, messages, extra, omit);
+  } catch (err) {
+    if (isParamError(err)) return callOpenAICompatible(url, key, model, messages, {}, ['max_tokens', 'temperature']); // newer models refuse some settings
+    throw err;
+  }
 }
 
 function friendlyError(err) {
@@ -1878,8 +2008,10 @@ async function converse(userText) {
   const model = cfg.provider === 'rehearsal' ? 'rehearsal script' : (cfg.model || PROVIDERS[cfg.provider].model);
   log('brain', `Sent ${messages.length} messages to ${model}`);
   const t0 = performance.now();
+  turnT0 = t0; turnVoiced = false;
   try {
     const raw = await think(messages);
+    turnBrainS = (performance.now() - t0) / 1000;
     const { emotion, text } = parseReply(raw);
     log('brain', `Replied in ${((performance.now() - t0) / 1000).toFixed(1)} s: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}"`);
     history.push({ role: 'assistant', content: raw.trim() });
@@ -1893,6 +2025,7 @@ async function converse(userText) {
     history.pop();
     setEmotion('concerned');
     showAgent(msg, true);
+    turnVoiced = true;
     if (err.status === 0 && needsKey() && (document.body.classList.contains('present') || document.body.classList.contains('embed'))) openKeyDialog();
   } finally {
     busy = false;
@@ -1963,7 +2096,7 @@ $('#present-btn-2').onclick = () => setPresent(true);
 
 /* Key dialog (mainly for exported demos, where the studio panel is hidden) */
 function openKeyDialog() {
-  $('#kd-provider').value = cfg.provider === 'groq' ? 'groq' : 'gemini';
+  $('#kd-provider').value = ['groq', 'claude', 'openai'].includes(cfg.provider) ? cfg.provider : 'gemini';
   $('#kd-key').value = keyFor($('#kd-provider').value);
   $('#key-dialog').hidden = false;
   $('#kd-key').focus();
@@ -1977,7 +2110,7 @@ $('#kd-save').onclick = () => {
   cfg.provider = p; cfg.model = '';
   syncFields(); saveCfg(); updateKeyBtn();
   $('#key-dialog').hidden = true;
-  log('brain', `Key added for ${p === 'gemini' ? 'Google Gemini' : 'Groq'}`);
+  log('brain', `Key added for ${PROVIDERS[p].label}`);
 };
 $('#kd-rehearse').onclick = () => {
   cfg.provider = 'rehearsal';
