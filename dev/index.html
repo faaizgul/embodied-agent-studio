@@ -1320,34 +1320,34 @@ function gesturePose(g, p, tt) {
   switch (g.name) {
     case 'wave': {
       const sw = Math.sin(tt * 7.5) * 0.55 * k;
-      return { R: { upper: [0.8, 0.3, 0.35], fore: [0.12 + sw * 0.6, 1, 0.22], hand: [0.15 + sw, 1, 0.15], fingers: OPEN }, head: { tilt: 0.06 } };
+      return { R: { upper: [0.8, 0.3, 0.35], fore: [0.12 + sw * 0.6, 1, 0.22], hand: [0.15 + sw, 1, 0.15], palm: [0, 0, 1], fingers: OPEN }, head: { tilt: 0.06 } };
     }
     case 'namaste': {
       const bow = Math.sin(Math.PI * Math.min(1, Math.max(0, (p - 0.2) / 0.6)));
-      const arm = { upper: [0.28, -0.8, 0.55], fore: [-0.85, 0.42, 0.42], hand: [-0.1, 1, 0.18], fingers: OPEN };
+      const arm = { upper: [0.14, -0.72, 0.68], fore: [-0.97, 0.3, 0.25], hand: [-0.05, 1, 0.22], palm: [-1, 0, 0], fingers: OPEN };
       return { L: arm, R: arm, head: { pitch: 0.28 * bow * k } };
     }
     case 'point':
-      return { R: { upper: [0.32, -0.05, 1], fore: [0.28, 0.08, 1], hand: [0.28, 0.08, 1], fingers: { index: 0, middle: 1, ring: 1, little: 1, thumb: 0.75 } }, head: { tilt: -0.04 } };
+      return { R: { upper: [0.32, -0.05, 1], fore: [0.28, 0.08, 1], hand: [0.28, 0.08, 1], palm: [-0.6, -0.8, 0], fingers: { index: 0, middle: 1, ring: 1, little: 1, thumb: 0.75 } }, head: { tilt: -0.04 } };
     case 'palms': {
       const b = Math.sin(tt * 3) * 0.08 * k;
-      const arm = { upper: [0.42, -0.85, 0.32], fore: [0.5 + b, 0.05, 0.85], hand: [0.75, 0.38 + b, 0.5], fingers: OPEN };
+      const arm = { upper: [0.42, -0.85, 0.32], fore: [0.5 + b, 0.05, 0.85], hand: [0.75, 0.38 + b, 0.5], palm: [0.15, 0.85, 0.5], fingers: OPEN };
       return { L: arm, R: arm };
     }
     case 'shrug': {
       const up = Math.sin(Math.PI * Math.min(1, p * 1.6));
-      const arm = { upper: [0.5, -0.85, 0.15], fore: [0.85, 0.12 + 0.2 * up, 0.55], hand: [0.85, 0.5, 0.25], fingers: OPEN };
+      const arm = { upper: [0.5, -0.85, 0.15], fore: [0.85, 0.12 + 0.2 * up, 0.55], hand: [0.85, 0.5, 0.25], palm: [0.1, 1, 0.3], fingers: OPEN };
       return { L: arm, R: arm, head: { tilt: 0.16 * up * k, pitch: -0.04 * up } };
     }
     case 'chin':
-      return { R: { upper: [0.18, -0.75, 0.62], fore: [-0.55, 0.82, 0.3], hand: [-0.3, 0.9, 0.35], fingers: { index: 0.35, middle: 0.75, ring: 0.85, little: 0.85, thumb: 0.3 } }, head: { tilt: 0.12 * k, pitch: 0.07 } };
+      return { R: { upper: [0.18, -0.75, 0.62], fore: [-0.55, 0.82, 0.3], hand: [-0.3, 0.9, 0.35], palm: [-0.3, 0, -1], fingers: { index: 0.35, middle: 0.75, ring: 0.85, little: 0.85, thumb: 0.3 } }, head: { tilt: 0.12 * k, pitch: 0.07 } };
     case 'nod':
       return { head: { pitch: 0.15 * k * Math.abs(Math.sin(p * Math.PI * 3)) } };
     case 'count': {
       const shown = Math.min(g.n, 1 + Math.floor(Math.max(0, tt - 0.45) / 0.5));
       const fingers = {};
       FINGERS.forEach((f, i) => { fingers[f] = i < shown ? 0 : 1; });
-      return { R: { upper: [0.38, -0.45, 0.8], fore: [0.1, 0.95, 0.35], hand: [0.04, 1, 0.22], fingers } };
+      return { R: { upper: [0.38, -0.45, 0.8], fore: [0.1, 0.95, 0.35], hand: [0.04, 1, 0.22], palm: [0, 0, 1], fingers } };
     }
     default: return {};
   }
@@ -1362,7 +1362,7 @@ const gest = {
   cur: null, talkSide: 'R', talkSwap: 3, beat: 0,
   arms: { L: null, R: null }, head: { pitch: 0, tilt: 0 },
 };
-const newArmState = () => ({ w: 0, upper: new THREE.Vector3(0, -1, 0), fore: new THREE.Vector3(0, -1, 0.2), hand: new THREE.Vector3(0, -1, 0.2), fingers: { ...RELAXED }, fw: 0 });
+const newArmState = () => ({ w: 0, upper: new THREE.Vector3(0, -1, 0), fore: new THREE.Vector3(0, -1, 0.2), hand: new THREE.Vector3(0, -1, 0.2), palm: new THREE.Vector3(-1, 0, 0), pw: 0, fingers: { ...RELAXED } });
 gest.arms.L = newArmState(); gest.arms.R = newArmState();
 
 function greetGesture() {
@@ -1462,6 +1462,19 @@ function prepareRig(a) {
 }
 function resetRig(a) { a?.rig?.rest?.forEach(([b, q]) => b.quaternion.copy(q)); }
 
+// Turn the hand around its own length so the palm faces a direction (wave: forward; namaste: the other hand).
+function twistPalm(arm, want, w) {
+  const f = arm.fingers;
+  const axis = worldDir(arm.hand, arm.end, _cf.hd).normalize();
+  const across = worldDir(f.index[0].bone, (f.little?.[0] || f.ring[0]).bone, _cf.ac);
+  const n = _cf.n.copy(axis).cross(across).normalize().multiplyScalar(arm.palmSign);
+  const goal = _cf.d.copy(want).addScaledVector(axis, -want.dot(axis));
+  if (goal.lengthSq() < 1e-6) return;
+  goal.normalize();
+  let ang = Math.acos(Math.max(-1, Math.min(1, n.dot(goal))));
+  if (_cf.axis.copy(n).cross(goal).dot(axis) < 0) ang = -ang;
+  rotateBoneWorld(arm.hand, _q[3].setFromAxisAngle(axis, ang * w));
+}
 const _cf = { hd: new THREE.Vector3(), ac: new THREE.Vector3(), n: new THREE.Vector3(), d: new THREE.Vector3(), prev: new THREE.Vector3(), axis: new THREE.Vector3() };
 function curlFingers(arm, curls, w) {
   if (!arm.palmSign || w <= 0.001) return;
@@ -1536,7 +1549,9 @@ function updateGestures(dt, f) {
         st.upper.lerp(goal.set(...want.upper).normalize(), rate).normalize();
         st.fore.lerp(goal.set(...want.fore).normalize(), rate).normalize();
         st.hand.lerp(goal.set(...want.hand).normalize(), rate).normalize();
+        if (want.palm) st.palm.lerp(goal.set(...want.palm).normalize(), rate).normalize();
       }
+      st.pw += ((want?.palm ? goalW : 0) - st.pw) * rate;
       const fingerGoal = want?.fingers || RELAXED;
       for (const k of FINGERS) st.fingers[k] += ((fingerGoal[k] || 0) - st.fingers[k]) * rate;
       const arm = rig[side];
@@ -1546,6 +1561,7 @@ function updateGestures(dt, f) {
         aimBone(arm.upper, arm.lower, toWorld(st.upper, out, t3), st.w);
         aimBone(arm.lower, arm.hand, toWorld(st.fore, out, t3), st.w);
         if (arm.end) aimBone(arm.hand, arm.end, toWorld(st.hand, out, t3), st.w);
+        if (arm.end && arm.palmSign && st.pw > 0.002) twistPalm(arm, toWorld(st.palm, out, t3), st.pw);
       }
       if (rig.hasFingers) curlFingers(arm, st.fingers, 1);
     }
