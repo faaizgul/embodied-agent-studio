@@ -1706,8 +1706,9 @@ scene.add(reticle);
 
 const clock = new THREE.Clock();
 let visemeClock = 0;
+let forcedDt = null; // lets studio.step() advance time by hand, for testing in a background tab
 function tick(time, xrFrame) {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const dt = forcedDt ?? Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   for (const k of Object.keys(face.emotion)) {
     const goal = face.target === k ? 1 : 0;
@@ -2520,6 +2521,7 @@ window.studio = {
   emotion: (name) => setEmotion(name),
   get avatar() { return avatar; },
   get gestureState() { return gest; },
+  step(frames = 1, dt = 1 / 60) { for (let i = 0; i < frames; i++) { forcedDt = dt; tick(); } forcedDt = null; },
   loadAvatarUrl: async (url) => loadAvatarBlob(await (await fetch(url)).blob(), url.split('/').pop().split('?')[0]),
 };
 $$('#try-gestures [data-g]').forEach((b) => { b.onclick = () => { getAudio(); playGesture(b.dataset.g, { n: Number(b.dataset.n) || 3, why: 'tried from the Body tab' }); }; });
