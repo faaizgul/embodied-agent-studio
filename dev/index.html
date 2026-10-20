@@ -2515,6 +2515,7 @@ window.studio = {
   gesture: (name, n) => playGesture(name, { n, why: 'from the console' }),
   emotion: (name) => setEmotion(name),
   get avatar() { return avatar; },
+  get gestureState() { return gest; },
   loadAvatarUrl: async (url) => loadAvatarBlob(await (await fetch(url)).blob(), url.split('/').pop().split('?')[0]),
 };
 $$('#try-gestures [data-g]').forEach((b) => { b.onclick = () => { getAudio(); playGesture(b.dataset.g, { n: Number(b.dataset.n) || 3, why: 'tried from the Body tab' }); }; });
