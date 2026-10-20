@@ -1,0 +1,2871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Embodied Agent Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Give an AI agent a 3D body, a voice and a personality, in the browser, using free tools.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--
+  Embodied Agent Studio
+  Open source (MIT). Built for teaching: every layer of an embodied agent
+  (Body, Brain, Voice, Stage) is visible and editable.
+  Libraries: three.js (MIT), @pixiv/three-vrm (MIT), loaded from jsDelivr.
+  Robot model: "RobotExpressive" by Tomás Laulhé (CC0), via the three.js project.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.5/lib/three-vrm.module.min.js"
+  }
+}
+</script>
+<style>
+/* Layout: a live stage on the left, the four build layers as tabs on the right; stacks on phones. */
+:root {
+  --bg: #e9edf2;
+  --panel: #f8fafc;
+  --panel-2: #eef2f6;
+  --line: #d3dae3;
+  --fg: #142030;
+  --muted: #5a6778;
+  --accent: #0b7480;
+  --accent-ink: #ffffff;
+  --accent-soft: #d5ecee;
+  --stage: #17222e;
+  --stage-fg: #eef3f8;
+  --listen: #d2553f;
+  --think: #b7791f;
+  --speak: #0b7480;
+  --danger: #b4372a;
+  --font-display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --panel: #151d26; --panel-2: #1b2531; --line: #2a3644;
+    --fg: #e4ebf2; --muted: #95a3b4; --accent: #4cc3cc; --accent-ink: #072226; --accent-soft: #163a40;
+    --stage: #0b1117; --stage-fg: #eef3f8; --listen: #f07a62; --think: #e0a54a; --speak: #4cc3cc; --danger: #f0806f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --panel: #151d26; --panel-2: #1b2531; --line: #2a3644;
+  --fg: #e4ebf2; --muted: #95a3b4; --accent: #4cc3cc; --accent-ink: #072226; --accent-soft: #163a40;
+  --stage: #0b1117; --stage-fg: #eef3f8; --listen: #f07a62; --think: #e0a54a; --speak: #4cc3cc; --danger: #f0806f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 var(--font-body);
+}
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: var(--font-mono); font-size: 0.92em; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 0;
+}
+body.present .app, body.embed .app { grid-template-columns: minmax(0, 1fr); }
+body.present .panel, body.embed .panel { display: none; }
+body.embed #present-btn { display: none; }
+
+/* ---------- Stage ---------- */
+.stage {
+  position: relative; min-width: 0; min-height: 0;
+  background: var(--stage); color: var(--stage-fg); overflow: hidden;
+}
+#cam-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#canvas-wrap { position: absolute; inset: 0; }
+#canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+body.xr .stage { background: transparent; }
+body.xr #canvas-wrap, body.xr #cam-video { visibility: hidden; }
+
+.stage-top {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+}
+.stage-top > * { pointer-events: auto; }
+.agent-id { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.agent-name {
+  font-family: var(--font-display); font-weight: 700; font-size: 18px; letter-spacing: 0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.state-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: 500 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 6px 10px; border-radius: 99px; background: rgba(10,16,22,0.5); color: var(--stage-fg);
+}
+.state-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #7d8b99; }
+.state-chip[data-state="listening"]::before, .state-chip[data-state="wake"]::before { background: var(--listen); animation: pulse 1s infinite; }
+.state-chip[data-state="wake"]::before { animation-duration: 2.4s; }
+.state-chip[data-state="thinking"]::before { background: var(--think); animation: pulse 0.7s infinite; }
+.state-chip[data-state="speaking"]::before { background: var(--speak); }
+.agent-id { flex-wrap: wrap; row-gap: 6px; }
+.mood-chip::before { background: #8a97a5; transition: background 0.3s; }
+.mood-chip[data-mood="happy"]::before { background: #f2c14e; }
+.mood-chip[data-mood="sad"]::before { background: #7ea6e8; }
+.mood-chip[data-mood="surprised"]::before { background: #e98ad9; }
+.mood-chip[data-mood="thinking"]::before { background: var(--think); }
+.mood-chip[data-mood="concerned"]::before { background: #f07a62; }
+.gesture-chip::before { background: transparent; border: 2px solid #9fd8a8; width: 6px; height: 6px; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .state-chip::before { animation: none !important; } }
+.stage-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.ghost-btn {
+  border: 1px solid rgba(255,255,255,0.22); background: rgba(10,16,22,0.45); color: var(--stage-fg);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 13px;
+}
+.ghost-btn:hover { background: rgba(255,255,255,0.14); }
+.ghost-btn[aria-pressed="true"] { background: var(--stage-fg); color: var(--stage); }
+
+.stage-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: grid; gap: 10px; justify-items: center;
+}
+.captions { width: min(720px, 100%); display: grid; gap: 6px; }
+.cap-user {
+  justify-self: end; max-width: 85%;
+  font-size: 13px; color: rgba(238,243,248,0.85);
+  background: rgba(10,16,22,0.55); padding: 6px 10px; border-radius: 10px 10px 2px 10px;
+}
+.cap-agent {
+  justify-self: start; max-width: 100%;
+  font-size: 16px; line-height: 1.45;
+  background: rgba(10,16,22,0.75); padding: 10px 14px; border-radius: 12px 12px 12px 2px;
+  border-left: 3px solid var(--speak);
+}
+.cap-agent.err { border-left-color: var(--listen); }
+.ar-hint {
+  font-size: 13px; background: rgba(10,16,22,0.75); padding: 8px 12px; border-radius: 99px;
+}
+.composer {
+  width: min(720px, 100%);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  background: rgba(10,16,22,0.75); border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px; padding: 6px;
+}
+.composer input {
+  min-width: 0; border: 0; background: transparent; color: var(--stage-fg); padding: 9px 6px; outline: none;
+}
+.composer input::placeholder { color: rgba(238,243,248,0.5); }
+.mic {
+  width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(255,255,255,0.12); color: var(--stage-fg);
+  display: grid; place-items: center;
+}
+.mic[aria-pressed="true"] { background: var(--listen); color: #fff; }
+.mic:disabled { opacity: 0.35; cursor: not-allowed; }
+.send {
+  border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer;
+  background: var(--speak); color: #04191c; font-weight: 600;
+}
+.start-btn {
+  border: 0; border-radius: 99px; padding: 10px 18px; cursor: pointer;
+  background: var(--stage-fg); color: var(--stage); font-weight: 600;
+}
+.mic-note { font-size: 12px; color: rgba(238,243,248,0.7); text-align: center; }
+
+.drop-hint {
+  position: absolute; inset: 12px; border: 2px dashed var(--speak); border-radius: 16px;
+  display: grid; place-items: center; background: rgba(11,17,23,0.7);
+  font-family: var(--font-display); font-size: 18px; pointer-events: none;
+}
+.loading {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font: 500 12px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.8;
+}
+
+/* Key dialog shown on the stage (for exported demos) */
+.key-dialog {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: rgba(8,12,16,0.6);
+}
+.key-card {
+  width: min(380px, 100%); display: grid; gap: 12px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 18px;
+}
+.key-card h2 { margin: 0; font: 700 16px var(--font-display); }
+.key-card p { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* ---------- Panel ---------- */
+.panel {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background: var(--panel); border-left: 1px solid var(--line);
+}
+.panel-head {
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 0 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 15px; line-height: 1.2; }
+.brand small { display: block; font: 400 12px var(--font-body); color: var(--muted); margin-top: 2px; }
+.tabs {
+  display: flex; gap: 2px; padding: 12px max(16px, env(safe-area-inset-right, 0px)) 0 14px;
+  border-bottom: 1px solid var(--line); overflow-x: auto;
+}
+.tab {
+  border: 0; background: transparent; cursor: pointer; padding: 9px 10px 10px;
+  color: var(--muted); font-weight: 500; white-space: nowrap; border-bottom: 2px solid transparent;
+  display: inline-flex; align-items: baseline; gap: 6px;
+}
+.tab .n { font: 500 11px var(--font-mono); opacity: 0.8; }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tab-body {
+  flex: 1; overflow-y: auto; min-height: 0;
+  padding-block: 16px 28px;
+  padding-left: 18px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.section { display: grid; gap: 14px; }
+.lede { margin: 0; color: var(--muted); max-width: 60ch; }
+.lede strong { color: var(--fg); font-weight: 600; }
+.field { display: grid; gap: 5px; }
+.field > label, .field > .label {
+  font-size: 12px; font-weight: 600; color: var(--fg); letter-spacing: 0.01em;
+}
+.field .hint, .hint { font-size: 12px; color: var(--muted); }
+p.hint { margin: 0; }
+input[type="text"], input[type="password"], input[type="url"], select, textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+  padding: 8px 10px; min-width: 0;
+}
+textarea { resize: vertical; min-height: 64px; line-height: 1.45; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+input[type="color"] { width: 44px; height: 32px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); padding: 2px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.row > .field { flex: 1 1 140px; }
+.group-title {
+  font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+  margin: 8px 0 -4px; padding-top: 10px; border-top: 1px solid var(--line);
+}
+.btn {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--fg);
+  border-radius: 8px; padding: 8px 12px; cursor: pointer; font-weight: 500; display: inline-block;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.small { padding: 6px 10px; font-size: 13px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.check { display: flex; gap: 9px; align-items: flex-start; font-size: 14px; }
+.check input { margin-top: 3px; }
+.check small { display: block; color: var(--muted); font-size: 12.5px; }
+.btn:disabled { opacity: 0.5; cursor: wait; }
+.note {
+  font-size: 12.5px; color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+}
+.note.warn { border-color: color-mix(in srgb, var(--think) 60%, var(--line)); }
+.note a, .lede a, .guide a { color: var(--accent); }
+.note ol, .note ul, .guide ol, .guide ul { margin: 6px 0 0; padding-left: 18px; }
+.note li, .guide li { margin: 3px 0; }
+.guide { font-size: 13px; color: var(--muted); display: grid; gap: 8px; }
+.guide strong { color: var(--fg); }
+.cite { font-size: 12px; color: var(--muted); padding-left: 10px; border-left: 2px solid var(--line); }
+.cite p { margin: 4px 0; }
+pre.prompt, textarea.code {
+  margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 var(--font-mono);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  max-height: 280px; overflow: auto;
+}
+details summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+details[open] summary { margin-bottom: 8px; }
+details > .guide, details > .lede { margin-top: 4px; }
+.swatches { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.swatches .field { flex: 0 0 auto; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.seg button { border: 0; background: var(--panel-2); padding: 7px 12px; cursor: pointer; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* Avatar gallery */
+.gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pick {
+  display: grid; gap: 2px; text-align: left; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 10px;
+}
+.pick:hover { border-color: var(--accent); }
+.pick[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pick .t { font-weight: 600; font-size: 13px; }
+.pick .s { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.pick .k { font: 500 10px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+.avatar-card {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+}
+.avatar-card .kind { font: 500 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+.avatar-card .fname { font-weight: 600; word-break: break-all; }
+
+/* Behind the scenes log */
+.log { display: grid; gap: 6px; font: 12px/1.45 var(--font-mono); }
+.log-item { display: grid; grid-template-columns: 56px 58px minmax(0, 1fr); gap: 8px; align-items: start; }
+.log-item time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log-item .layer {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 6px;
+  border-radius: 4px; text-align: center; background: var(--panel-2); border: 1px solid var(--line);
+}
+.log-item .layer[data-l="ear"] { color: var(--listen); }
+.log-item .layer[data-l="brain"] { color: var(--think); }
+.log-item .layer[data-l="voice"], .log-item .layer[data-l="face"] { color: var(--accent); }
+.log-item .msg { word-break: break-word; }
+.log-item.err .msg { color: var(--danger); }
+.empty { color: var(--muted); font-size: 13px; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 70vh auto; height: auto; }
+  html, body { height: auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); }
+  .tab-body { overflow: visible; }
+  body.present .app, body.embed .app { grid-template-rows: 100vh; height: 100%; }
+  body.present, body.embed { height: 100%; }
+}
+@media (max-width: 420px) {
+  .gallery { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage" id="stage" aria-label="Agent stage">
+    <video id="cam-video" playsinline muted hidden></video>
+    <div id="canvas-wrap"></div>
+    <div class="loading" id="loading">Loading 3D engine</div>
+    <div class="drop-hint" id="drop-hint" hidden>Drop a .vrm or .glb avatar</div>
+
+    <div class="stage-top" id="stage-top">
+      <div class="agent-id">
+        <span class="agent-name" id="agent-name">Ira</span>
+        <span class="state-chip" id="state-chip" data-state="idle">Idle</span>
+        <span class="state-chip mood-chip" id="emotion-chip" data-mood="neutral" title="The emotion the agent chose for its face">Feeling: neutral</span>
+        <span class="state-chip gesture-chip" id="gesture-chip" title="The gesture the body is making" hidden></span>
+      </div>
+      <div class="stage-actions">
+        <button class="ghost-btn" id="key-btn" type="button" hidden>Add AI key</button>
+        <button class="ghost-btn" id="cam-btn" type="button" aria-pressed="false">Camera view</button>
+        <button class="ghost-btn" id="ar-btn" type="button" hidden>View in AR</button>
+        <button class="ghost-btn" id="present-btn" type="button">Hide studio</button>
+      </div>
+    </div>
+
+    <div class="stage-bottom" id="stage-bottom">
+      <div class="ar-hint" id="ar-hint" hidden>Move your phone slowly to find the floor, then tap to place the agent.</div>
+      <div class="captions" aria-live="polite">
+        <div class="cap-user" id="cap-user" hidden></div>
+        <div class="cap-agent" id="cap-agent" hidden></div>
+      </div>
+      <button class="start-btn" id="start-btn" type="button">Start conversation</button>
+      <form class="composer" id="composer" autocomplete="off">
+        <button class="mic" id="mic" type="button" aria-pressed="false" aria-label="Talk">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <input id="say" type="text" placeholder="Type, or press the mic and speak" aria-label="Message to the agent">
+        <button class="send" type="submit">Send</button>
+      </form>
+      <div class="mic-note" id="mic-note" hidden></div>
+    </div>
+
+    <div class="key-dialog" id="key-dialog" hidden>
+      <div class="key-card" role="dialog" aria-modal="true" aria-labelledby="kd-title">
+        <h2 id="kd-title">Give the agent a brain</h2>
+        <p>Paste a free key to let the agent think. It stays only in this browser. Without a key, the agent answers from its script.</p>
+        <div class="field">
+          <label for="kd-provider">AI service</label>
+          <select id="kd-provider">
+            <option value="gemini">Google Gemini (aistudio.google.com/apikey)</option>
+            <option value="groq">Groq (console.groq.com/keys)</option>
+            <option value="claude">Anthropic Claude, paid (console.anthropic.com)</option>
+            <option value="openai">OpenAI, paid (platform.openai.com)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="kd-key">API key</label>
+          <input id="kd-key" type="password" autocomplete="off" placeholder="Paste your free key">
+        </div>
+        <div class="row">
+          <button class="btn primary" id="kd-save" type="button">Use this key</button>
+          <button class="btn" id="kd-rehearse" type="button">Use the script</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="panel" aria-label="Agent studio">
+    <div class="panel-head">
+      <div class="brand">Embodied Agent Studio<small>Body, brain, voice and stage for an AI agent</small></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="body" aria-selected="true"><span class="n">1</span>Body</button>
+      <button class="tab" role="tab" data-tab="brain" aria-selected="false"><span class="n">2</span>Brain</button>
+      <button class="tab" role="tab" data-tab="voice" aria-selected="false"><span class="n">3</span>Voice</button>
+      <button class="tab" role="tab" data-tab="stage" aria-selected="false"><span class="n">4</span>Stage</button>
+      <button class="tab" role="tab" data-tab="log" aria-selected="false">Behind the scenes</button>
+    </div>
+
+    <div class="tab-body">
+      <!-- 1 BODY -->
+      <section class="section" data-panel="body">
+        <p class="lede"><strong>The body is what people see.</strong> Start with a ready-made body, or load your own avatar. Notice how each one changes what you expect the agent to be.</p>
+        <div class="gallery" id="gallery">
+          <button class="pick" type="button" data-pick="robot"><span class="k">Non-human</span><span class="t">Robot</span><span class="s">Clearly a machine. Expressions and gestures.</span></button>
+          <button class="pick" type="button" data-pick="mascot"><span class="k">Stylised</span><span class="t">Mascot</span><span class="s">Human-like, but cartoon. Change its colours.</span></button>
+          <button class="pick" type="button" data-pick="own"><span class="k">Your design</span><span class="t">Your avatar</span><span class="s">Load a .vrm or .glb file you made or chose.</span></button>
+        </div>
+        <input id="avatar-file" type="file" accept=".vrm,.glb" hidden>
+        <div class="avatar-card">
+          <div>
+            <div class="kind" id="avatar-kind">Built-in</div>
+            <div class="fname" id="avatar-fname">Mascot</div>
+          </div>
+        </div>
+        <p class="hint">You can also drag an avatar file onto the stage. Robot model by Tomás Laulhé (CC0), from the three.js project.</p>
+
+        <div class="group-title" id="builtin-title">Mascot colours</div>
+        <div class="swatches" id="builtin-controls">
+          <div class="field"><label for="c-body">Outfit</label><input id="c-body" type="color" data-cfg="bodyColor"></div>
+          <div class="field"><label for="c-skin">Skin</label><input id="c-skin" type="color" data-cfg="skinColor"></div>
+          <div class="field"><label for="c-hair">Hair</label><input id="c-hair" type="color" data-cfg="hairColor"></div>
+          <div class="field"><label for="c-eye">Eyes</label><input id="c-eye" type="color" data-cfg="eyeColor"></div>
+        </div>
+
+        <div class="group-title">Body behaviour</div>
+        <p class="hint" style="margin:0">Switch behaviours off to compare. Does the agent feel more alive, or more uncanny, with its hands moving?</p>
+        <label class="check"><input type="checkbox" id="b-idle" data-cfg="idleMotion"><span>Idle movement<small>Breathing, small sways and glances. Blinking always stays on.</small></span></label>
+        <label class="check"><input type="checkbox" id="b-emotion" data-cfg="emotionGestures"><span>Gestures with emotions and words<small>Open palms when happy, a shrug when concerned, a hand to the chin while thinking, pointing at directions and counting numbers.</small></span></label>
+        <label class="check"><input type="checkbox" id="b-talk" data-cfg="talkHands"><span>Talking hands<small>Small hand movements that follow the rhythm of its voice.</small></span></label>
+        <label class="check"><input type="checkbox" id="b-brain" data-cfg="brainGestures"><span>Let the brain choose gestures<small>The model is told which gestures its body can make, and picks one when a person would.</small></span></label>
+        <div class="field">
+          <label for="f-greetg">Greeting gesture</label>
+          <select id="f-greetg" data-cfg="greetGesture">
+            <option value="wave">Wave</option>
+            <option value="namaste">Namaste</option>
+            <option value="nod">Nod</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-gint">How big the gestures are</label>
+          <select id="f-gint" data-cfg="gestureIntensity">
+            <option value="0.6">Subtle</option>
+            <option value="0.85">Natural</option>
+            <option value="1">Expressive</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="label">Try a gesture</span>
+          <div class="chip-row" id="try-gestures">
+            <button class="btn small" type="button" data-g="wave">Wave</button>
+            <button class="btn small" type="button" data-g="namaste">Namaste</button>
+            <button class="btn small" type="button" data-g="point">Point</button>
+            <button class="btn small" type="button" data-g="palms">Open palms</button>
+            <button class="btn small" type="button" data-g="shrug">Shrug</button>
+            <button class="btn small" type="button" data-g="chin">Hand to chin</button>
+            <button class="btn small" type="button" data-g="nod">Nod</button>
+            <button class="btn small" type="button" data-g="count" data-n="3">Count to 3</button>
+          </div>
+          <span class="hint" id="behaviour-note"></span>
+        </div>
+
+        <div class="group-title">Camera and set</div>
+        <div class="field">
+          <span class="label">Framing</span>
+          <div class="seg" id="framing">
+            <button type="button" data-v="face">Face</button>
+            <button type="button" data-v="upper">Upper body</button>
+            <button type="button" data-v="full">Full body</button>
+          </div>
+          <span class="hint">Drag on the stage to orbit. Scroll or pinch to zoom.</span>
+        </div>
+        <div class="swatches">
+          <div class="field"><label for="c-bg">Backdrop</label><input id="c-bg" type="color" data-cfg="bgColor"></div>
+        </div>
+
+        <details>
+          <summary>Where to get a body</summary>
+          <div class="guide">
+            <ul>
+              <li><strong>VRoid Studio</strong> (free, Windows and macOS): design an anime-style character and use <em>Export as VRM</em>. Full face, blinking and lip movement. <a href="https://vroid.com/en/studio" target="_blank" rel="noopener">vroid.com/en/studio</a></li>
+              <li><strong>VRoid Hub</strong>: ready-made VRM avatars by other people. Each one has its own licence; check it allows your use.</li>
+              <li><strong>MetaPerson Creator</strong>: a realistic avatar from a selfie. The first avatar is free. Using a real face raises consent questions: whose face is it, and who agreed?</li>
+              <li><strong>MakeHuman for Blender (MPFB)</strong>: free, open-source realistic humans. Its viseme pack adds the mouth shapes this studio uses. Export as <code>.glb</code>.</li>
+              <li><strong>Your own model in Blender</strong>, human or not: add a rig and convert it with the free VRM Add-on for Blender, or export a <code>.glb</code> with shape keys named like ARKit (<code>jawOpen</code>, <code>eyeBlinkLeft</code>).</li>
+              <li><strong>Free character packs</strong> (Quaternius, Kenney, KayKit, 100 Avatars): good bodies, but most have no face shapes, so the mouth will not move. That is a design limit worth discussing.</li>
+            </ul>
+          </div>
+        </details>
+        <details>
+          <summary>Design questions for the body</summary>
+          <div class="guide">
+            <p><strong>The uncanny valley.</strong> In 1970 the roboticist Masahiro Mori proposed that as a robot looks more human, people feel more affinity for it, until it is almost but not quite human. At that point affinity drops into eeriness: the uncanny valley. He noted that movement makes the effect stronger, and advised designers to aim for moderate human likeness, or even a deliberately non-human look, rather than risk the valley.</p>
+            <div class="cite">
+              <p>Mori, M. (1970). Bukimi no tani [The uncanny valley]. <em>Energy, 7</em>(4), 33–35.</p>
+              <p>Mori, M., MacDorman, K. F., &amp; Kageki, N. (2012). The uncanny valley [From the field]. <em>IEEE Robotics &amp; Automation Magazine, 19</em>(2), 98–100. <a href="https://doi.org/10.1109/MRA.2012.2192811" target="_blank" rel="noopener">doi.org/10.1109/MRA.2012.2192811</a></p>
+            </div>
+            <ul>
+              <li>Try the robot, the mascot and your own avatar. Where does each one sit on Mori's curve? Which feels most trustworthy, and why?</li>
+              <li>Human, animal, object or abstract? Realistic or stylised? What does each choice promise about how smart the agent is?</li>
+              <li>Does its look match its job and the people it serves? What does its posture say before it speaks?</li>
+              <li>If it is based on a real person's face, who agreed to that, and what could go wrong?</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <!-- 2 BRAIN -->
+      <section class="section" data-panel="brain" hidden>
+        <p class="lede"><strong>The brain is a large language model plus your character sheet.</strong> Everything you write below becomes the instructions the model reads before every reply.</p>
+
+        <div class="group-title">Character sheet</div>
+        <div class="field">
+          <label for="f-name">Name</label>
+          <input id="f-name" type="text" data-cfg="name">
+          <details>
+            <summary>Design questions for the name</summary>
+            <div class="guide">
+              <ul>
+                <li>The name is the first thing people learn about the agent. What does it signal: human or machine, gender, age, region, formality?</li>
+                <li>Does it suit the culture and language of the people it serves? Is it easy for them to say?</li>
+                <li>A human name can raise expectations of human understanding. Does your agent live up to that, or would a non-human name set fairer expectations?</li>
+                <li>In "always listening" mode the agent wakes up when it hears its name. Pick one that speech recognition hears clearly, and that people will not say by accident.</li>
+              </ul>
+            </div>
+          </details>
+        </div>
+        <div class="field"><label for="f-role">Job: what task does it do that a person used to do?</label><textarea id="f-role" data-cfg="role" rows="2"></textarea></div>
+        <div class="field"><label for="f-aud">Who it talks to</label><input id="f-aud" type="text" data-cfg="audience"></div>
+        <div class="field"><label for="f-pers">Personality</label><textarea id="f-pers" data-cfg="personality" rows="2"></textarea></div>
+        <div class="field"><label for="f-style">How it speaks</label><textarea id="f-style" data-cfg="style" rows="2"></textarea></div>
+        <div class="field">
+          <label for="f-know">What it knows</label>
+          <textarea id="f-know" data-cfg="knowledge" rows="6"></textarea>
+          <span class="hint">Paste facts, FAQs or rules. Keep it under about 2 pages. Never paste personal data: free tiers may use what you send to improve their models.</span>
+        </div>
+        <div class="field"><label for="f-bound">Boundaries: what it refuses, and what it does when unsure</label><textarea id="f-bound" data-cfg="boundaries" rows="2"></textarea></div>
+        <div class="field"><label for="f-greet">Opening line</label><input id="f-greet" type="text" data-cfg="greeting"></div>
+        <div class="field"><label for="f-lang">Reply language</label><input id="f-lang" type="text" data-cfg="language"></div>
+
+        <div class="group-title">Model</div>
+        <div class="field">
+          <label for="f-provider">Where the brain runs</label>
+          <select id="f-provider" data-cfg="provider">
+            <option value="rehearsal">Rehearsal mode (no key, scripted)</option>
+            <option value="gemini">Google Gemini (free tier)</option>
+            <option value="groq">Groq (free tier, fastest)</option>
+            <option value="claude">Anthropic Claude (paid API key)</option>
+            <option value="openai">OpenAI (paid API key)</option>
+            <option value="custom">Other OpenAI-compatible service</option>
+          </select>
+        </div>
+        <div id="key-block" class="section" style="gap:12px">
+          <div class="field" id="url-field" hidden>
+            <label for="f-url">Chat completions URL</label>
+            <input id="f-url" type="url" data-cfg="customUrl" placeholder="https://.../v1/chat/completions">
+          </div>
+          <div class="field">
+            <label for="f-key">API key</label>
+            <input id="f-key" type="password" placeholder="Paste your free key" autocomplete="off">
+            <span class="hint" id="key-hint"></span>
+          </div>
+          <div class="field">
+            <label for="f-model">Model</label>
+            <input id="f-model" type="text" data-cfg="model">
+            <span class="hint">Model names change often. If you get a "model not found" error, copy the current free model name from the provider's site.</span>
+          </div>
+          <div class="row"><button class="btn" id="test-brain" type="button">Test the brain</button><span class="hint" id="test-result"></span></div>
+        </div>
+        <div class="note" id="rehearsal-note">Rehearsal mode answers from your opening line and the "What it knows" box without any AI. Use it to test the body and voice. Switch to a free key to make it think.</div>
+
+        <details>
+          <summary>See exactly what the brain receives</summary>
+          <pre class="prompt" id="prompt-preview"></pre>
+        </details>
+        <div class="row"><button class="btn" id="reset-chat" type="button">Start a new conversation</button></div>
+      </section>
+
+      <!-- 3 VOICE -->
+      <section class="section" data-panel="voice" hidden>
+        <p class="lede"><strong>The voice has two halves:</strong> ears that turn speech into text, and a mouth that turns text into speech. The voice is separate from the brain: the brain writes the words, the voice speaks them.</p>
+
+        <div class="group-title">Ears (speech to text)</div>
+        <div class="field">
+          <label for="f-listen">Language it listens for</label>
+          <select id="f-listen" data-cfg="listenLang">
+            <option value="en-IN">English (India)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="en-US">English (US)</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="kn-IN">Kannada</option>
+            <option value="ta-IN">Tamil</option>
+            <option value="te-IN">Telugu</option>
+            <option value="mr-IN">Marathi</option>
+            <option value="bn-IN">Bengali</option>
+            <option value="fi-FI">Finnish</option>
+          </select>
+          <span class="hint" id="ears-hint"></span>
+        </div>
+        <div class="field">
+          <label for="f-listenmode">How it listens</label>
+          <select id="f-listenmode" data-cfg="listenMode">
+            <option value="push">Press to talk: press the mic for each turn</option>
+            <option value="handsfree">Hands-free turns: listens again after every reply</option>
+            <option value="wake">Always listening: answers when it hears its name</option>
+          </select>
+          <span class="hint" id="listenmode-hint"></span>
+        </div>
+        <div class="field">
+          <label for="f-endpause">When it decides you have finished</label>
+          <select id="f-endpause" data-cfg="endPause">
+            <option value="0.6">After a short pause (0.6 s): snappy, may cut you off</option>
+            <option value="1">After a normal pause (1 s)</option>
+            <option value="1.6">After a long pause (1.6 s): patient, for slow or thoughtful speakers</option>
+          </select>
+          <span class="hint">Turn-taking is a design choice: people expect a reply within about a second, but nobody likes being interrupted.</span>
+        </div>
+
+        <div class="group-title">Mouth (text to speech)</div>
+        <div class="field">
+          <label for="f-voicesource">Voice engine</label>
+          <select id="f-voicesource" data-cfg="voiceSource">
+            <option value="browser">Browser voice (free, no key)</option>
+            <option value="gemini">Gemini voice (natural, uses your free Gemini key)</option>
+          </select>
+        </div>
+
+        <div class="section" id="browser-voice" style="gap:12px">
+          <div class="field">
+            <label for="f-voice">Voice</label>
+            <select id="f-voice"></select>
+            <span class="hint" id="voice-hint">The list depends on your browser and computer.</span>
+          </div>
+          <div class="note" id="edge-tip" hidden>For free, much more natural voices, open this page in <strong>Microsoft Edge</strong> and choose a voice marked <strong>natural</strong>, such as an "Online (Natural)" English (India) voice.</div>
+          <div class="row">
+            <div class="field"><label for="f-rate">Speed <span id="rate-val"></span></label><input id="f-rate" type="range" min="0.6" max="1.5" step="0.05" data-cfg="rate"></div>
+            <div class="field"><label for="f-pitch">Pitch <span id="pitch-val"></span></label><input id="f-pitch" type="range" min="0.5" max="1.6" step="0.05" data-cfg="pitch"></div>
+          </div>
+        </div>
+
+        <div class="section" id="gemini-voice" style="gap:12px" hidden>
+          <div class="field">
+            <label for="f-gvoice">Gemini voice</label>
+            <select id="f-gvoice" data-cfg="geminiVoice"></select>
+          </div>
+          <div class="field">
+            <label for="f-vstyle">Voice direction</label>
+            <textarea id="f-vstyle" data-cfg="voiceStyle" rows="2"></textarea>
+            <span class="hint">Describe accent, pace and tone in plain words. The agent's expression for each reply is added automatically, so a [happy] reply also sounds happy.</span>
+          </div>
+          <div class="field">
+            <label for="f-gkey">Gemini API key</label>
+            <input id="f-gkey" type="password" placeholder="The same free key as the brain" autocomplete="off">
+            <span class="hint">Shared with the brain's Gemini key. Stored only in this browser.</span>
+          </div>
+          <div class="field">
+            <label for="f-ttsmodel">Voice model</label>
+            <input id="f-ttsmodel" type="text" data-cfg="ttsModel">
+          </div>
+          <div class="note warn">Natural, but slower: in our tests the Gemini voice added about 4 to 6 seconds before each reply. Free voice limits are tight and change often. If the limit is reached, the agent switches to the browser voice for a minute and says so in the log.</div>
+        </div>
+
+        <label class="row" style="gap:8px"><input id="f-autospeak" type="checkbox" data-cfg="autoSpeak"> Speak replies out loud</label>
+        <div class="row"><button class="btn primary" id="test-voice" type="button">Hear the voice</button></div>
+        <details>
+          <summary>Design questions for the voice</summary>
+          <div class="guide">
+            <ul>
+              <li>Does the voice match the body and the name? What accent and pace suit the people it serves?</li>
+              <li>Should it sound human at all, or clearly synthetic? A very human voice on a robot body can feel uncanny too.</li>
+              <li>How does it show that it is listening, or thinking? People need to know when the microphone is on.</li>
+              <li>Press to talk gives people control. Always listening feels more natural, but the microphone never rests. Which is right for your setting?</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <!-- 4 STAGE -->
+      <section class="section" data-panel="stage" hidden>
+        <p class="lede"><strong>The stage is where people meet your agent.</strong> Save your work, share a demo, put it on a website, or bring it into the room on a phone.</p>
+
+        <div class="group-title">Save your work</div>
+        <div class="row">
+          <button class="btn primary" id="save-json" type="button">Save project</button>
+          <label class="btn" for="load-json">Open project</label>
+          <input id="load-json" type="file" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint">The project file holds the character sheet, voice and listening settings, the camera, and your avatar file. It never includes your API key. Open it on any computer to carry on.</p>
+
+        <div class="group-title">Share a demo</div>
+        <div class="row"><button class="btn primary" id="export-demo" type="button">Export standalone demo (.html)</button></div>
+        <details>
+          <summary>How the demo file works</summary>
+          <div class="guide">
+            <p><strong>What is inside:</strong> the whole studio, your character sheet, voice settings and avatar, in one web page. It opens straight in presentation view.</p>
+            <p><strong>What is not inside:</strong> your API key. Visitors press <em>Add AI key</em> and paste their own free key, or use the script (rehearsal mode). It also needs an internet connection.</p>
+            <p><strong>To share it as a link:</strong></p>
+            <ol>
+              <li>Rename the file to <code>index.html</code>.</li>
+              <li>Create a free public GitHub repository and upload the file. GitHub's website accepts files up to 25 MB.</li>
+              <li>In the repository, open <em>Settings</em>, then <em>Pages</em>. Choose <em>Deploy from a branch</em>, branch <em>main</em>, folder <em>/ (root)</em>, and save.</li>
+              <li>After a minute or two the link appears at the top of the Pages settings. Open it on a phone to test.</li>
+            </ol>
+            <p>Larger than 25 MB? Use Netlify Drop (drag the file onto <a href="https://app.netlify.com/drop" target="_blank" rel="noopener">app.netlify.com/drop</a>), or export your VRoid avatar with smaller textures.</p>
+          </div>
+        </details>
+        <p class="hint" id="export-note"></p>
+
+        <div class="group-title">Put it on a website</div>
+        <p class="hint">Host your demo first, then paste this code into any web page. Replace the address with your demo's link. Adding <code>?embed</code> hides the studio controls.</p>
+        <textarea class="code" id="embed-code" rows="4" readonly></textarea>
+        <div class="row"><button class="btn" id="copy-embed" type="button">Copy embed code</button><span class="hint" id="copy-result"></span></div>
+
+        <div class="group-title">Phones and AR</div>
+        <div class="guide">
+          <p><strong>Camera view</strong> (any phone or laptop): press <em>Camera view</em> on the stage. The agent appears over the live camera, but it does not stick to the floor.</p>
+          <p><strong>View in AR</strong> (Android phones with Chrome): open the hosted link on the phone and press <em>View in AR</em>. Move the phone slowly to find the floor, then tap to place the agent. Tap again to move it. iPhones do not support web AR yet, so use camera view there.</p>
+        </div>
+        <div class="field">
+          <span class="label">Size in AR</span>
+          <div class="seg" id="ar-size">
+            <button type="button" data-v="life">Life size</button>
+            <button type="button" data-v="table">Tabletop</button>
+          </div>
+        </div>
+
+        <div class="group-title">Presenting</div>
+        <div class="row"><button class="btn" id="present-btn-2" type="button">Hide the studio (presentation view)</button></div>
+        <div class="group-title">Coming next: headsets</div>
+        <p class="lede">The same agent can stand in front of you in a VR or mixed reality headset such as Meta Quest, through the browser's WebXR support. That is the next workshop.</p>
+        <details>
+          <summary>Design questions for the stage</summary>
+          <div class="guide">
+            <ul>
+              <li>Where will people meet this agent: a laptop, a phone, a kiosk, a headset, a website? Standing or sitting? Alone or in public?</li>
+              <li>How does that change its size, its voice volume and how long it should talk?</li>
+              <li>Life size in the room feels like a person. Tabletop feels like a toy or a guide. Which fits your agent's job?</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <!-- LOG -->
+      <section class="section" data-panel="log" hidden>
+        <p class="lede"><strong>Every turn passes through the layers in order:</strong> ears, brain, face, voice. This log shows each step as it happens.</p>
+        <div class="log" id="log"><p class="empty">Nothing yet. Say something to the agent.</p></div>
+        <div class="row"><button class="btn" id="clear-log" type="button">Clear log</button></div>
+      </section>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+/* Capture the page source first, before anything changes the DOM, so the
+   studio can export itself as a standalone demo. */
+const SOURCE_HTML = '<!doctype html>\n' + document.documentElement.outerHTML;
+
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const params = new URLSearchParams(location.search);
+if (params.has('embed')) document.body.classList.add('embed');
+
+/* ================= Config ================= */
+const PROVIDERS = {
+  rehearsal: { needsKey: false },
+  gemini: {
+    label: 'Google Gemini',
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    model: 'gemini-3.5-flash-lite', // answers in about a second; the bigger flash models can take 5 to 30 s on the free tier
+    keyHint: 'Free key from Google AI Studio: aistudio.google.com/apikey. The default "lite" model is the quickest to answer; a bigger model such as gemini-3.8-flash thinks harder but can take many seconds.',
+  },
+  groq: {
+    label: 'Groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    model: 'llama-3.3-70b-versatile',
+    keyHint: 'Free key from console.groq.com/keys. Usually the quickest brain to reply.',
+  },
+  claude: {
+    label: 'Anthropic Claude',
+    url: 'https://api.anthropic.com/v1/messages',
+    model: 'claude-haiku-5-5',
+    keyHint: 'Paid: create a key at console.anthropic.com and add prepaid credits. A Claude Pro or Max plan does not include API use. Haiku is the fastest Claude model.',
+  },
+  openai: {
+    label: 'OpenAI',
+    url: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-6-luna',
+    keyHint: 'Paid: create a key at platform.openai.com and add prepaid credits. ChatGPT Go, Plus and Pro plans do not include API use.',
+  },
+  custom: { label: 'your service', url: '', model: '', keyHint: 'Any service that offers an OpenAI-compatible chat completions endpoint.' },
+};
+const GEMINI_VOICES = ['Kore', 'Puck', 'Zephyr', 'Charon', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirrhoe', 'Autonoe', 'Enceladus', 'Iapetus', 'Umbriel', 'Algieba', 'Despina', 'Erinome', 'Algenib', 'Rasalgethi', 'Laomedeia', 'Achernar', 'Alnilam', 'Schedar', 'Gacrux', 'Pulcherrima', 'Achird', 'Zubenelgenubi', 'Vindemiatrix', 'Sadachbia', 'Sadaltager', 'Sulafat'];
+const ROBOT_URLS = [
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r170/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+  'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+];
+
+const DEFAULTS = {
+  name: 'Ira',
+  role: 'Answers questions at the help desk of a design school library, which a librarian used to do in person.',
+  audience: 'First-year design students, often in a hurry between classes',
+  personality: 'Warm, patient and a little playful. Curious about what the student is making.',
+  style: 'Short, friendly sentences. Uses the student\'s words. Asks one follow-up question when it helps.',
+  knowledge: 'EXAMPLE KNOWLEDGE (fictional library):\nOpening hours: 9 am to 8 pm, Monday to Saturday. Closed on Sundays and public holidays.\nStudents can borrow up to 4 books for 14 days. Renew once online if nobody has reserved the book.\nLate returns cost 5 rupees per book per day.\nThe material library (fabric, paper and wood samples) is on the first floor and is reference only.\nPrinting costs 2 rupees per black and white page and 10 rupees per colour page. Pay at the counter.\nQuiet study room bookings: 2 hours at a time, at the front desk.',
+  boundaries: 'Only helps with library questions. If something is not in its knowledge, it says so and suggests asking the librarian at the front desk. Never makes up rules or prices.',
+  greeting: 'Hi, I\'m Ira, the library helper. What are you looking for today?',
+  language: 'English',
+  provider: 'rehearsal',
+  model: '',
+  customUrl: '',
+  listenLang: 'en-IN',
+  listenMode: 'push',
+  endPause: '1',
+  idleMotion: true,
+  emotionGestures: true,
+  talkHands: true,
+  brainGestures: false,
+  greetGesture: 'wave',
+  gestureIntensity: '0.85',
+  voiceSource: 'browser',
+  voiceName: '',
+  geminiVoice: 'Kore',
+  voiceStyle: 'Warm and friendly, with a gentle Indian English accent. Unhurried, clear pace.',
+  ttsModel: 'gemini-3.8-flash-tts',
+  rate: 1,
+  pitch: 1.05,
+  autoSpeak: true,
+  starter: 'mascot',
+  bodyColor: '#2f6fb3',
+  skinColor: '#c99572',
+  hairColor: '#2a1d17',
+  eyeColor: '#5a3a22',
+  bgColor: '#17222e',
+  framing: 'upper',
+  arSize: 'life',
+};
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable */ } },
+};
+
+let cfg = { ...DEFAULTS };
+const embeddedEl = document.getElementById('embedded-agent');
+let embedded = null;
+if (embeddedEl) {
+  try { embedded = JSON.parse(embeddedEl.textContent); } catch { embedded = null; }
+}
+if (embedded?.config) {
+  cfg = { ...DEFAULTS, ...embedded.config };
+} else {
+  try { const saved = JSON.parse(store.get('eas.config') || 'null'); if (saved) cfg = { ...DEFAULTS, ...saved }; } catch { /* ignore */ }
+}
+let saveTimer;
+function saveCfg() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { if (!embedded) store.set('eas.config', JSON.stringify(cfg)); }, 300);
+}
+const keyFor = (p) => store.get('eas.key.' + p) || '';
+const setKey = (p, v) => store.set('eas.key.' + p, (v || '').trim());
+
+/* ================= Behind-the-scenes log ================= */
+const logEl = $('#log');
+function log(layer, msg, isErr = false) {
+  if (logEl.querySelector('.empty')) logEl.innerHTML = '';
+  const item = document.createElement('div');
+  item.className = 'log-item' + (isErr ? ' err' : '');
+  const t = new Date();
+  item.innerHTML = `<time>${t.toTimeString().slice(0, 8)}</time><span class="layer" data-l="${layer}">${layer}</span><span class="msg"></span>`;
+  item.querySelector('.msg').textContent = msg;
+  logEl.appendChild(item);
+  while (logEl.children.length > 200) logEl.firstChild.remove();
+  if (!logEl.closest('[hidden]')) item.scrollIntoView({ block: 'nearest' });
+}
+$('#clear-log').onclick = () => { logEl.innerHTML = '<p class="empty">Nothing yet. Say something to the agent.</p>'; };
+
+/* ================= 3D scene ================= */
+const wrap = $('#canvas-wrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(0x000000, 0);
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 50);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 0.4;
+controls.maxDistance = 8;
+controls.enablePan = false;
+
+scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x2a2a35, 1.4));
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
+key.position.set(1.2, 2.4, 2.2);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x9fd8ff, 1.1);
+rim.position.set(-2, 2, -2);
+scene.add(rim);
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(0.9, 64),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06 })
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+let camOn = false, xrActive = false;
+function applyBackdrop() {
+  scene.background = camOn || xrActive ? null : new THREE.Color(cfg.bgColor);
+  floor.visible = !camOn && !xrActive;
+}
+applyBackdrop();
+
+function resize() {
+  const w = wrap.clientWidth || 1, h = wrap.clientHeight || 1;
+  if (!xrActive) renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(wrap);
+
+/* ================= Avatars ================= */
+/* Every avatar exposes the same small interface:
+   root, headY, height, update(dt, face), react(event), dispose().
+   face = { mouth 0..1, viseme, blink 0..1, emotion weights, look } */
+
+function buildMascot() {
+  const root = new THREE.Group();
+  const mat = (c, r = 0.6) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+  const bodyMat = mat(cfg.bodyColor, 0.7), skinMat = mat(cfg.skinColor, 0.55), hairMat = mat(cfg.hairColor, 0.85);
+  const irisMat = mat(cfg.eyeColor, 0.35), dark = mat(0x111116, 0.2), white = mat(0xf7f7f4, 0.3), lipMat = mat(0x8c3f45, 0.5);
+  const add = (parent, geo, m, p = [0, 0, 0], s = [1, 1, 1], r = [0, 0, 0]) => {
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.position.set(...p); mesh.scale.set(...s); mesh.rotation.set(...r);
+    parent.add(mesh); return mesh;
+  };
+
+  // Body: torso, shoulders, arms, hands, legs hinted by a long top
+  const torso = add(root, new THREE.CapsuleGeometry(0.19, 0.46, 10, 28), bodyMat, [0, 0.8, 0], [1.25, 1, 0.78]);
+  const collar = add(root, new THREE.TorusGeometry(0.075, 0.018, 10, 28), bodyMat, [0, 1.09, 0.005], [1, 1, 1], [Math.PI / 2, 0, 0]);
+  // Arms with a shoulder, elbow and wrist, and simple fingers, so the gesture engine can move them.
+  // s = 1 is the mascot's own left (it faces the camera, along +z).
+  const rig = {};
+  const arms = [1, -1].map((s) => {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(0.255 * s, 1.0, 0);
+    root.add(shoulder);
+    add(shoulder, new THREE.SphereGeometry(0.068, 20, 14), bodyMat, [0, 0, 0]);
+    add(shoulder, new THREE.CapsuleGeometry(0.052, 0.17, 8, 16), bodyMat, [0.01 * s, -0.115, 0]);
+    const elbow = new THREE.Group();
+    elbow.position.set(0.018 * s, -0.235, 0);
+    shoulder.add(elbow);
+    add(elbow, new THREE.SphereGeometry(0.05, 16, 12), bodyMat, [0, 0, 0]);
+    add(elbow, new THREE.CapsuleGeometry(0.047, 0.13, 8, 16), bodyMat, [0.004 * s, -0.09, 0]);
+    const wrist = new THREE.Group();
+    wrist.position.set(0.006 * s, -0.215, 0.004);
+    elbow.add(wrist);
+    add(wrist, new THREE.CapsuleGeometry(0.033, 0.03, 6, 12), skinMat, [0, -0.005, 0]);
+    add(wrist, new THREE.SphereGeometry(0.044, 16, 12), skinMat, [0, -0.055, 0.004], [0.62, 1.0, 0.95]);
+    const handEnd = new THREE.Object3D();
+    handEnd.position.set(0, -0.12, 0.004);
+    wrist.add(handEnd);
+    const finger = (pos, len, rot = [0, 0, 0]) => {
+      const g = new THREE.Group();
+      g.position.set(...pos); g.rotation.set(...rot);
+      wrist.add(g);
+      add(g, new THREE.CapsuleGeometry(0.0105, len, 4, 8), skinMat, [0, -len / 2 - 0.004, 0]);
+      const tip = new THREE.Object3D(); tip.position.set(0, -len - 0.012, 0); g.add(tip);
+      return [{ bone: g, tip }];
+    };
+    // Index at the front, little finger at the back; the palm faces the body.
+    const fingers = {
+      index: finger([0, -0.085, 0.026], 0.034),
+      middle: finger([0, -0.09, 0.009], 0.038),
+      ring: finger([0, -0.088, -0.008], 0.034),
+      little: finger([0, -0.082, -0.024], 0.027),
+      thumb: finger([-0.016 * s, -0.04, 0.036], 0.03, [-0.5, 0, 0.35 * s]),
+    };
+    rig[s === 1 ? 'L' : 'R'] = { upper: shoulder, lower: elbow, hand: wrist, end: handEnd, fingers };
+    return { shoulder, s };
+  });
+  const neck = add(root, new THREE.CylinderGeometry(0.055, 0.065, 0.14, 20), skinMat, [0, 1.15, 0]);
+  // Legs and shoes, so the agent stands on the floor (it matters in AR)
+  const legMat = mat(0x2b3140, 0.8), shoeMat = mat(0x1a1c22, 0.5);
+  for (const s of [1, -1]) {
+    add(root, new THREE.CapsuleGeometry(0.075, 0.36, 8, 16), legMat, [0.085 * s, 0.29, 0]);
+    add(root, new THREE.SphereGeometry(0.07, 18, 12), shoeMat, [0.085 * s, 0.045, 0.035], [0.85, 0.55, 1.35]);
+  }
+
+  // Head
+  const head = new THREE.Group();
+  head.position.y = 1.38;
+  root.add(head);
+  add(head, new THREE.SphereGeometry(0.205, 56, 40), skinMat, [0, 0, 0], [0.92, 1.12, 0.98]);
+  add(head, new THREE.SphereGeometry(0.218, 48, 28, 0, Math.PI * 2, 0, Math.PI * 0.46), hairMat, [0, 0.025, -0.01], [0.95, 1.12, 1.03], [-0.38, 0, 0]);
+  add(head, new THREE.SphereGeometry(0.214, 40, 28, Math.PI, Math.PI, 0.25, 1.75), hairMat, [0, -0.005, -0.012], [0.95, 1.12, 1.0]); // back of the head
+    for (const s of [1, -1]) {
+    add(head, new THREE.SphereGeometry(0.042, 18, 14), skinMat, [0.188 * s, -0.01, 0.0], [0.45, 1, 0.75]); // ears
+  }
+  add(head, new THREE.CapsuleGeometry(0.015, 0.04, 6, 12), skinMat, [0, -0.028, 0.19], [1.1, 1, 1], [0.35, 0, 0]); // nose bridge
+  add(head, new THREE.SphereGeometry(0.021, 18, 14), skinMat, [0, -0.058, 0.197], [1.25, 0.85, 1]); // nose tip
+
+  const eyes = [], lids = [], brows = [];
+  for (const s of [1, -1]) {
+    const eye = new THREE.Group();
+    eye.position.set(0.072 * s, 0.025, 0.155);
+    head.add(eye);
+    add(eye, new THREE.SphereGeometry(0.036, 28, 20), white);
+    add(eye, new THREE.CircleGeometry(0.019, 28), irisMat, [0, 0, 0.0362]);
+    add(eye, new THREE.CircleGeometry(0.0095, 20), dark, [0, 0, 0.0364]);
+    add(eye, new THREE.CircleGeometry(0.004, 12), white, [0.007, 0.007, 0.0366]);
+    eyes.push(eye);
+    const lid = add(head, new THREE.SphereGeometry(0.0385, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), skinMat, [0.072 * s, 0.025, 0.155]);
+    lids.push(lid);
+    const brow = add(head, new THREE.CapsuleGeometry(0.008, 0.05, 4, 10), hairMat, [0.072 * s, 0.085, 0.178], [1, 1, 0.8], [0, 0, Math.PI / 2]);
+    brows.push({ mesh: brow, s });
+  }
+  const mouthGroup = new THREE.Group();
+  mouthGroup.position.set(0, -0.112, 0.18);
+  mouthGroup.rotation.x = -0.2;
+  head.add(mouthGroup);
+  const mouthIn = add(mouthGroup, new THREE.CircleGeometry(0.03, 36), mat(0x3a1418, 0.6), [0, 0, 0.0], [1.3, 0.2, 1]);
+  const upperLip = add(mouthGroup, new THREE.CapsuleGeometry(0.008, 0.05, 6, 12), lipMat, [0, 0.008, 0.004], [1, 1, 0.8], [0, 0, Math.PI / 2]);
+  const lowerLip = add(mouthGroup, new THREE.CapsuleGeometry(0.009, 0.045, 6, 12), lipMat, [0, -0.008, 0.004], [1, 1, 0.8], [0, 0, Math.PI / 2]);
+  const cheekMat = new THREE.MeshBasicMaterial({ color: 0xff6f7d, transparent: true, opacity: 0, depthWrite: false });
+  for (const s of [1, -1]) {
+    const c = add(head, new THREE.CircleGeometry(0.026, 24), cheekMat, [0.115 * s, -0.06, 0.153], [1, 0.7, 1], [0, 0.55 * s, 0]);
+    c.renderOrder = 2;
+  }
+
+  rig.head = head;
+  let t = 0, look = new THREE.Vector2(), lookGoal = new THREE.Vector2(), nextLook = 1.5, nod = 0;
+  return {
+    kind: 'builtin', label: 'Mascot', root, headY: 1.38, height: 1.62, frameScale: 1.25, rig,
+    update(dt, f) {
+      t += dt;
+      const e = f.emotion;
+      const idle = cfg.idleMotion ? 1 : 0;
+      // Idle life: breathing, small sways, and glances (switch off in Body behaviour)
+      torso.scale.y = 1 + Math.sin(t * 1.6) * 0.008 * idle;
+      nextLook -= dt;
+      if (nextLook <= 0) { lookGoal.set((Math.random() - 0.5) * 0.35 * idle, (Math.random() - 0.5) * 0.2 * idle); if (Math.random() < 0.5) lookGoal.set(0, 0); nextLook = 1.2 + Math.random() * 2.5; }
+      look.lerp(lookGoal, Math.min(1, dt * 12));
+      eyes.forEach((eye) => { eye.rotation.y = look.x; eye.rotation.x = -look.y - e.thinking * 0.25; });
+      nod += ((f.mouth > 0.2 ? Math.sin(t * 5.5) * 0.025 * idle : 0) - nod) * Math.min(1, dt * 4);
+      head.rotation.x = Math.sin(t * 0.7) * 0.025 * idle - e.thinking * 0.1 + e.sad * 0.12 + nod;
+      head.rotation.z = Math.sin(t * 0.5) * 0.02 * idle + e.thinking * 0.1 - e.surprised * 0.03;
+      head.rotation.y = Math.sin(t * 0.33) * 0.05 * idle + look.x * 0.15;
+      arms.forEach(({ shoulder, s }) => { shoulder.rotation.set(0, 0, s * (0.1 + Math.sin(t * 1.6) * 0.012 * idle) + s * e.surprised * 0.08); });
+      // Eyelids: open is rotated back, a blink rotates them forward over the eye
+      const openAngle = -1.05 - e.surprised * 0.35;
+      const close = Math.min(1, f.blink + e.happy * 0.28 + e.sad * 0.18 + e.thinking * 0.12);
+      lids.forEach((lid) => { lid.rotation.x = openAngle + close * 2.35; });
+      brows.forEach(({ mesh, s }) => {
+        mesh.position.y = 0.085 + e.surprised * 0.022 - e.concerned * 0.006 + e.happy * 0.006;
+        mesh.rotation.z = Math.PI / 2 + s * (e.sad * 0.3 + e.concerned * 0.22 - e.thinking * 0.12);
+      });
+      const v = f.viseme;
+      const wide = v === 'ee' || v === 'ih' ? 0.28 : v === 'ou' || v === 'oh' ? -0.3 : 0;
+      const open = f.mouth + e.surprised * 0.35;
+      mouthIn.scale.set(1.3 + wide * f.mouth + e.happy * 0.25, 0.2 + open * 1.2, 1);
+      upperLip.position.y = 0.008 + open * 0.012;
+      lowerLip.position.y = -0.008 - open * 0.026;
+      const smile = e.happy * 0.35 - e.sad * 0.25 - e.concerned * 0.12;
+      upperLip.scale.set(1, 1 + wide * f.mouth * 0.5 + e.happy * 0.25, 0.8);
+      lowerLip.scale.set(1, 1 + wide * f.mouth * 0.5 + e.happy * 0.25, 0.8);
+      mouthGroup.position.y = -0.112 + smile * 0.006;
+      mouthGroup.rotation.x = -0.2 - smile * 0.4;
+      cheekMat.opacity = e.happy * 0.4;
+    },
+    recolor() {
+      bodyMat.color.set(cfg.bodyColor); skinMat.color.set(cfg.skinColor); hairMat.color.set(cfg.hairColor); irisMat.color.set(cfg.eyeColor);
+    },
+    dispose() { root.traverse((o) => { o.geometry?.dispose?.(); }); },
+  };
+}
+
+async function loadGLTF(url) {
+  const loader = new GLTFLoader();
+  loader.register((parser) => new VRMLoaderPlugin(parser));
+  return loader.loadAsync(url);
+}
+
+async function buildRobot() {
+  let gltf, lastErr;
+  for (const url of ROBOT_URLS) {
+    try { gltf = await loadGLTF(url); break; } catch (err) { lastErr = err; }
+  }
+  if (!gltf) throw lastErr || new Error('Could not download the robot');
+  const model = gltf.scene;
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model, true); // precise: measures the posed, skinned mesh
+  const s = 1.45 / (box.max.y - box.min.y);
+  const root = new THREE.Group();
+  model.scale.setScalar(s);
+  model.position.y = -box.min.y * s;
+  root.add(model);
+  model.traverse((o) => { o.frustumCulled = false; });
+  let faceMesh = null, headBone = null;
+  model.traverse((o) => {
+    if (o.morphTargetDictionary && 'Surprised' in o.morphTargetDictionary) faceMesh = o;
+    if (!headBone && (o.isBone || o.type === 'Bone') && /^head/i.test(o.name)) headBone = o;
+  });
+  const byName = (re) => { let hit = null; model.traverse((o) => { if (!hit && o.isBone && re.test(o.name)) hit = o; }); return hit; };
+  const robotArm = (side) => ({ upper: byName(new RegExp(`^UpperArm\\.?${side}$`)), lower: byName(new RegExp(`^LowerArm\\.?${side}$`)), hand: byName(new RegExp(`^Palm2\\.?${side}$`)), end: byName(new RegExp(`^Middle1\\.?${side}$`)) });
+  const rig = { L: robotArm('L'), R: robotArm('R'), head: headBone };
+  const mixer = new THREE.AnimationMixer(model);
+  const clips = Object.fromEntries(gltf.animations.map((c) => [c.name, c]));
+  const idle = clips.Idle ? mixer.clipAction(clips.Idle) : null;
+  idle?.play();
+  let current = null;
+  mixer.addEventListener('finished', () => { if (current) { current.fadeOut(0.3); idle?.reset().fadeIn(0.3).play(); current = null; } });
+  const play = (name) => {
+    const clip = clips[name];
+    if (!clip || current) return;
+    current = mixer.clipAction(clip);
+    current.reset().setLoop(THREE.LoopOnce, 1);
+    current.clampWhenFinished = true;
+    idle?.fadeOut(0.25);
+    current.fadeIn(0.25).play();
+  };
+  const morph = (n, v) => { if (faceMesh) { const i = faceMesh.morphTargetDictionary[n]; if (i !== undefined) faceMesh.morphTargetInfluences[i] = v; } };
+  let t = 0;
+  const headRest = headBone ? headBone.quaternion.clone() : null;
+  root.updateMatrixWorld(true);
+  const box2 = new THREE.Box3().setFromObject(root, true);
+  return {
+    kind: 'robot', label: 'Robot', root, headY: box2.max.y * 0.78, height: box2.max.y, frameScale: 1.6, rig,
+    noFingers: true, // three chunky fingers, no pointing or counting
+    clips: { wave: 'Wave', nod: 'Yes', thumbs: 'ThumbsUp' },
+    playClip(name) { if (!clips[name] || current) return false; play(name); return true; },
+    update(dt, f) {
+      t += dt;
+      if (headBone) headBone.quaternion.copy(headRest);
+      if (idle) idle.timeScale = cfg.idleMotion ? 1 : 0;
+      mixer.update(dt);
+      const e = f.emotion;
+      morph('Surprised', e.surprised);
+      morph('Sad', Math.min(1, e.sad + e.concerned * 0.6));
+      morph('Angry', e.thinking * 0.3);
+      if (headBone) {
+        headBone.rotateX(f.mouth * Math.sin(t * 9) * 0.06 - e.thinking * 0.12);
+        headBone.rotateZ(e.thinking * 0.12);
+      }
+    },
+    react(ev) { if (ev === 'surprised') play('Jump'); },
+    dispose() { mixer.stopAllAction(); root.traverse((o) => { o.geometry?.dispose?.(); }); },
+  };
+}
+
+const VRM_EMOTION = { happy: 'happy', sad: 'sad', surprised: 'surprised', concerned: 'sad', thinking: 'relaxed' };
+
+async function loadAvatarFile(url, fileName) {
+  const gltf = await loadGLTF(url);
+  const vrm = gltf.userData.vrm;
+  const v3 = new THREE.Vector3();
+  if (vrm) {
+    VRMUtils.removeUnnecessaryVertices(gltf.scene);
+    if (VRMUtils.combineSkeletons) VRMUtils.combineSkeletons(gltf.scene);
+    VRMUtils.rotateVRM0(vrm);
+    vrm.scene.traverse((o) => { o.frustumCulled = false; });
+    vrm.scene.updateMatrixWorld(true);
+    const headNode = vrm.humanoid.getRawBoneNode('head');
+    const headY = headNode ? headNode.getWorldPosition(v3).y : 1.4;
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    if (vrm.lookAt) vrm.lookAt.target = camera;
+    const bone = (n) => vrm.humanoid.getNormalizedBoneNode(n);
+    const raw = (n) => vrm.humanoid.getRawBoneNode(n);
+    const vrmArm = (side) => {
+      const chain = (f) => (f === 'Thumb' ? ['Metacarpal', 'Proximal', 'Distal'] : ['Proximal', 'Intermediate', 'Distal']).map((j) => raw(`${side}${f}${j}`)).filter(Boolean).map((b) => ({ bone: b }));
+      const fingers = { index: chain('Index'), middle: chain('Middle'), ring: chain('Ring'), little: chain('Little'), thumb: chain('Thumb') };
+      return { upper: raw(`${side}UpperArm`), lower: raw(`${side}LowerArm`), hand: raw(`${side}Hand`), end: raw(`${side}MiddleProximal`), fingers };
+    };
+    const rig = { L: vrmArm('left'), R: vrmArm('right'), head: raw('head') };
+    const em = vrm.expressionManager;
+    const has = (n) => !!em?.getExpression(n);
+    let t = 0;
+    return {
+      kind: 'vrm', label: fileName, root: vrm.scene, headY, height: box.max.y - box.min.y, fileName, rig,
+      update(dt, f) {
+        t += dt;
+        const e = f.emotion;
+        const idle = cfg.idleMotion ? 1 : 0;
+        const set = (n, r) => { const b = bone(n); if (b) { b.rotation.set(r[0], r[1], r[2]); } };
+        set('leftUpperArm', [0, 0, -1.2 + Math.sin(t * 1.6) * 0.015 * idle]);
+        set('rightUpperArm', [0, 0, 1.2 - Math.sin(t * 1.6) * 0.015 * idle]);
+        set('leftLowerArm', [0, -0.15, -0.12]);
+        set('rightLowerArm', [0, 0.15, 0.12]);
+        set('spine', [Math.sin(t * 1.6) * 0.012 * idle, 0, 0]);
+        set('chest', [Math.sin(t * 1.6 + 0.6) * 0.012 * idle, 0, 0]);
+        set('neck', [(Math.sin(t * 0.7) * 0.02 + (f.mouth > 0.2 ? Math.sin(t * 5.5) * 0.02 : 0)) * idle + e.sad * 0.1 - e.thinking * 0.06, Math.sin(t * 0.33) * 0.05 * idle, Math.sin(t * 0.5) * 0.02 * idle + e.thinking * 0.1]);
+        if (em) {
+          const w = { happy: 0, sad: 0, surprised: 0, relaxed: 0 };
+          for (const [k, name] of Object.entries(VRM_EMOTION)) w[name] = Math.max(w[name], e[k] || 0);
+          for (const [name, val] of Object.entries(w)) if (has(name)) em.setValue(name, val * (name === 'happy' ? 0.7 : 0.8));
+          if (has('blink')) em.setValue('blink', f.blink * (1 - e.happy * 0.7));
+          for (const vis of ['aa', 'ih', 'ou', 'ee', 'oh']) if (has(vis)) em.setValue(vis, vis === f.viseme ? f.mouth * 0.9 : 0);
+        }
+        vrm.update(dt);
+      },
+      dispose() { VRMUtils.deepDispose ? VRMUtils.deepDispose(vrm.scene) : null; },
+    };
+  }
+  /* Plain glTF/GLB: best effort using common blendshape names (ARKit, Oculus visemes). */
+  const root = gltf.scene;
+  const box = new THREE.Box3().setFromObject(root);
+  const height = box.max.y - box.min.y || 1.7;
+  const scale = height > 3 || height < 0.5 ? 1.7 / height : 1;
+  root.scale.setScalar(scale);
+  root.updateMatrixWorld(true);
+  const box2 = new THREE.Box3().setFromObject(root);
+  root.position.y -= box2.min.y;
+  root.traverse((o) => { o.frustumCulled = false; });
+  const morphMeshes = [];
+  root.traverse((o) => { if (o.morphTargetDictionary) morphMeshes.push(o); });
+  const setMorph = (names, val) => {
+    for (const m of morphMeshes) for (const n of names) {
+      const i = m.morphTargetDictionary[n];
+      if (i !== undefined) m.morphTargetInfluences[i] = val;
+    }
+  };
+  let headY = (box2.max.y - box2.min.y) * 0.9;
+  root.traverse((o) => { if (o.isBone && /head$/i.test(o.name)) headY = o.getWorldPosition(v3).y - box2.min.y; });
+  const mixer = gltf.animations?.length ? new THREE.AnimationMixer(root) : null;
+  if (mixer) mixer.clipAction(gltf.animations[0]).play();
+  const rig = findGlbRig(root);
+  const VIS = { aa: ['viseme_aa', 'jawOpen', 'mouthOpen', 'A'], ee: ['viseme_E', 'viseme_I', 'mouthOpen', 'E'], ih: ['viseme_I', 'mouthOpen', 'I'], oh: ['viseme_O', 'mouthFunnel', 'O'], ou: ['viseme_U', 'mouthPucker', 'U'] };
+  return {
+    kind: 'glb', label: fileName, root, headY, height: box2.max.y - box2.min.y, fileName, rig,
+    update(dt, f) {
+      mixer?.update(dt);
+      for (const k of Object.keys(VIS)) setMorph(VIS[k], 0);
+      setMorph(VIS[f.viseme] || VIS.aa, f.mouth * 0.8);
+      setMorph(['jawOpen'], f.mouth * 0.35);
+      setMorph(['eyeBlinkLeft', 'eyeBlinkRight', 'eyesClosed', 'Blink'], f.blink);
+      setMorph(['mouthSmileLeft', 'mouthSmileRight', 'mouthSmile', 'Smile'], f.emotion.happy * 0.7);
+      setMorph(['browInnerUp'], f.emotion.surprised * 0.8 + f.emotion.sad * 0.5);
+      setMorph(['mouthFrownLeft', 'mouthFrownRight'], f.emotion.sad * 0.6 + f.emotion.concerned * 0.3);
+    },
+    dispose() { root.traverse((o) => { o.geometry?.dispose?.(); }); },
+  };
+}
+
+/* ================= Gestures: arms, hands and head =================
+   One gesture library drives every body. A gesture says where each arm segment should point,
+   in the body's own frame: out to its side, up, and forward. Each frame the engine turns those
+   directions into bone rotations, so it works on any skeleton with an upper arm, forearm and hand. */
+function findGlbRig(root) {
+  const bones = [];
+  root.traverse((o) => { if (o.isBone) bones.push(o); });
+  if (!bones.length) return null;
+  // Blender's ".L" becomes a trailing "L" once three.js cleans the name ("upper_arm.L" -> "upper_armL").
+  const sideOf = (n) => (/[a-z0-9_]L$/.test(n) || /left|(^|[^a-z])l([^a-z]|$)|_l_/i.test(n) ? 'L' : /[a-z0-9_]R$/.test(n) || /right|(^|[^a-z])r([^a-z]|$)|_r_/i.test(n) ? 'R' : '');
+  const stem = (n) => n.replace(/([a-z0-9_])[LR]$/, '$1').toLowerCase().replace(/mixamorig\d*/g, '').replace(/j_bip_[lrc]_/g, '').replace(/left|right/g, '').replace(/(^|[_.\s-])[lr]([_.\s-]|$)/g, '$1$2').replace(/[^a-z0-9]/g, '');
+  const pick = (side, re) => bones.find((b) => sideOf(b.name) === side && re.test(stem(b.name)));
+  const arm = (side) => {
+    const chain = (re) => bones.filter((b) => sideOf(b.name) === side && re.test(stem(b.name)))
+      .sort((a, b) => stem(a.name).localeCompare(stem(b.name))).slice(0, 3).map((b) => ({ bone: b }));
+    return {
+      upper: pick(side, /^(upperarm|arm|uparm|upperarm0?1)$/),
+      lower: pick(side, /^(forearm|lowerarm|lowerarm0?1|elbow)$/),
+      hand: pick(side, /^(hand|wrist|palm)$/),
+      end: pick(side, /^(handmiddle1|middle1|middle0?1|middleproximal|fmiddle0?1|middlefinger1|finger31)$/),
+      fingers: { // Mixamo, Ready Player Me, VRoid, Rigify and MakeHuman names
+        index: chain(/^((hand|f)?index(finger)?(\d|proximal|intermediate|distal)|finger2\d)/),
+        middle: chain(/^((hand|f)?middle(finger)?(\d|proximal|intermediate|distal)|finger3\d)/),
+        ring: chain(/^((hand|f)?ring(finger)?(\d|proximal|intermediate|distal)|finger4\d)/),
+        little: chain(/^((hand|f)?(pinky|little)(finger)?(\d|proximal|intermediate|distal)|finger5\d)/),
+        thumb: chain(/^((hand|f)?thumb(\d|metacarpal|proximal|intermediate|distal)|finger1\d)/),
+      },
+    };
+  };
+  const rig = { L: arm('L'), R: arm('R'), head: bones.find((b) => /^head$/.test(stem(b.name))) || null };
+  return rig.L.upper && rig.L.lower && rig.R.upper && rig.R.lower ? rig : (rig.head ? { head: rig.head } : null);
+}
+
+const GESTURES = {
+  wave: { label: 'Waving', dur: 2.4 },
+  namaste: { label: 'Namaste', dur: 2.6 },
+  point: { label: 'Pointing', dur: 2.2 },
+  palms: { label: 'Open palms', dur: 2.0 },
+  shrug: { label: 'Shrugging', dur: 1.8 },
+  chin: { label: 'Hand to chin', dur: 2.6 },
+  nod: { label: 'Nodding', dur: 1.3 },
+  count: { label: 'Counting', dur: 2.5 },
+};
+const FINGERS = ['index', 'middle', 'ring', 'little', 'thumb'];
+const FIST = { index: 1, middle: 1, ring: 1, little: 1, thumb: 0.7 };
+const OPEN = { index: 0, middle: 0, ring: 0, little: 0, thumb: 0 };
+const RELAXED = { index: 0.22, middle: 0.26, ring: 0.3, little: 0.34, thumb: 0.12 };
+
+// Where each arm segment points for a gesture: [out, up, forward], at progress p (0 to 1), time tt in seconds.
+function gesturePose(g, p, tt) {
+  const k = intensityAmp();
+  switch (g.name) {
+    case 'wave': {
+      const sw = Math.sin(tt * 7.5) * 0.55 * k;
+      return { R: { upper: [0.8, 0.3, 0.35], fore: [0.12 + sw * 0.6, 1, 0.22], hand: [0.15 + sw, 1, 0.15], fingers: OPEN }, head: { tilt: 0.06 } };
+    }
+    case 'namaste': {
+      const bow = Math.sin(Math.PI * Math.min(1, Math.max(0, (p - 0.2) / 0.6)));
+      const arm = { upper: [0.28, -0.8, 0.55], fore: [-0.85, 0.42, 0.42], hand: [-0.1, 1, 0.18], fingers: OPEN };
+      return { L: arm, R: arm, head: { pitch: 0.28 * bow * k } };
+    }
+    case 'point':
+      return { R: { upper: [0.32, -0.05, 1], fore: [0.28, 0.08, 1], hand: [0.28, 0.08, 1], fingers: { index: 0, middle: 1, ring: 1, little: 1, thumb: 0.75 } }, head: { tilt: -0.04 } };
+    case 'palms': {
+      const b = Math.sin(tt * 3) * 0.08 * k;
+      const arm = { upper: [0.42, -0.85, 0.32], fore: [0.5 + b, 0.05, 0.85], hand: [0.75, 0.38 + b, 0.5], fingers: OPEN };
+      return { L: arm, R: arm };
+    }
+    case 'shrug': {
+      const up = Math.sin(Math.PI * Math.min(1, p * 1.6));
+      const arm = { upper: [0.5, -0.85, 0.15], fore: [0.85, 0.12 + 0.2 * up, 0.55], hand: [0.85, 0.5, 0.25], fingers: OPEN };
+      return { L: arm, R: arm, head: { tilt: 0.16 * up * k, pitch: -0.04 * up } };
+    }
+    case 'chin':
+      return { R: { upper: [0.18, -0.75, 0.62], fore: [-0.55, 0.82, 0.3], hand: [-0.3, 0.9, 0.35], fingers: { index: 0.35, middle: 0.75, ring: 0.85, little: 0.85, thumb: 0.3 } }, head: { tilt: 0.12 * k, pitch: 0.07 } };
+    case 'nod':
+      return { head: { pitch: 0.15 * k * Math.abs(Math.sin(p * Math.PI * 3)) } };
+    case 'count': {
+      const shown = Math.min(g.n, 1 + Math.floor(Math.max(0, tt - 0.45) / 0.5));
+      const fingers = {};
+      FINGERS.forEach((f, i) => { fingers[f] = i < shown ? 0 : 1; });
+      return { R: { upper: [0.38, -0.45, 0.8], fore: [0.1, 0.95, 0.35], hand: [0.04, 1, 0.22], fingers } };
+    }
+    default: return {};
+  }
+}
+function talkPose(beat, side) {
+  const arm = { upper: [0.26, -0.95, 0.24], fore: [0.38, -0.12 + 0.35 * beat, 0.9], hand: [0.45, 0.12 + 0.3 * beat, 0.78], fingers: RELAXED };
+  return side === 'L' ? { L: arm } : { R: arm };
+}
+const intensityAmp = () => Number(cfg.gestureIntensity) || 0.85;
+
+const gest = {
+  cur: null, talkSide: 'R', talkSwap: 3, beat: 0,
+  arms: { L: null, R: null }, head: { pitch: 0, tilt: 0 },
+};
+const newArmState = () => ({ w: 0, upper: new THREE.Vector3(0, -1, 0), fore: new THREE.Vector3(0, -1, 0.2), hand: new THREE.Vector3(0, -1, 0.2), fingers: { ...RELAXED }, fw: 0 });
+gest.arms.L = newArmState(); gest.arms.R = newArmState();
+
+function greetGesture() {
+  const g = cfg.greetGesture || 'wave';
+  if (g !== 'none') playGesture(g, { why: 'greeting' });
+}
+function updateBehaviourNote() {
+  const el = $('#behaviour-note');
+  if (!el || !avatar) return;
+  const rig = avatar.rig;
+  el.textContent = !rig ? 'This avatar has no skeleton, so it cannot move its arms. Rigged models from Mixamo, Ready Player Me, VRoid or MakeHuman can.'
+    : !rig.hasArms ? 'This avatar has a head bone but no arm bones the studio recognises, so only nods work.'
+    : avatar.kind === 'robot' ? 'The robot waves and nods with its own animations, and moves its arms for the other gestures. Its three-fingered hands cannot point or count.'
+    : rig.hasFingers ? 'Arms, hands and fingers found.'
+    : 'Arms found, but no finger bones, so pointing and counting use the whole hand.';
+}
+function showGestureChip(label) {
+  const chip = $('#gesture-chip');
+  if (!chip) return;
+  chip.hidden = !label;
+  chip.textContent = label ? `Gesture: ${label.toLowerCase()}` : '';
+}
+function playGesture(name, opts = {}) {
+  const def = GESTURES[name];
+  if (!def || !avatar) return false;
+  const n = Math.max(1, Math.min(5, opts.n || 3));
+  const label = name === 'count' ? `Counting to ${n}` : def.label;
+  // Bodies with their own animations (the robot) use them where they have one.
+  const clip = avatar.clips?.[name];
+  if (clip && avatar.playClip?.(clip)) {
+    gest.cur = { name, t: 0, dur: def.dur, clip: true, label };
+  } else {
+    if (!avatar.rig) { log('body', `This body has no arm bones, so it cannot ${def.label.toLowerCase()}.`); return false; }
+    gest.cur = { name, t: 0, dur: name === 'count' ? 0.9 + n * 0.5 + 0.7 : def.dur, hold: !!opts.hold, n, label };
+  }
+  showGestureChip(label);
+  log('body', `Gesture: ${label}${opts.why ? ` (${opts.why})` : ''}`);
+  return true;
+}
+function releaseGesture(name) {
+  const g = gest.cur;
+  if (g && g.name === name && g.hold) { g.hold = false; g.dur = g.t + 0.35; }
+}
+
+const _v = [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector3());
+const _q = [0, 1, 2, 3].map(() => new THREE.Quaternion());
+const IDQ = new THREE.Quaternion();
+function worldDir(a, b, out) { return out.copy(b.getWorldPosition(_v[4])).sub(a.getWorldPosition(_v[5])); }
+// Rotate a bone in world space by quaternion q (around its own pivot).
+function rotateBoneWorld(bone, q) {
+  if (!bone?.parent) return;
+  const wq = bone.getWorldQuaternion(_q[1]).premultiply(q);
+  const pq = bone.parent.getWorldQuaternion(_q[2]).invert();
+  bone.quaternion.copy(pq.multiply(wq));
+  bone.updateMatrixWorld(true);
+}
+function aimBone(bone, child, target, w) {
+  if (!bone || !child || w <= 0.001) return;
+  const d = worldDir(bone, child, _v[0]);
+  if (d.lengthSq() < 1e-10) return;
+  d.normalize();
+  const q = _q[0].setFromUnitVectors(d, target);
+  if (w < 1) q.slerpQuaternions(IDQ, q, w);
+  rotateBoneWorld(bone, q);
+}
+
+// Store each rig bone's resting rotation, and which way its palms face.
+function prepareRig(a) {
+  const rig = a?.rig;
+  if (!rig) return;
+  a.root.updateMatrixWorld(true);
+  rig.rest = [];
+  const keep = (b) => { if (b && !rig.rest.some(([x]) => x === b)) rig.rest.push([b, b.quaternion.clone()]); };
+  keep(rig.head);
+  rig.hasArms = !!(rig.L?.upper && rig.L?.lower && rig.R?.upper && rig.R?.lower);
+  rig.hasFingers = false;
+  for (const side of ['L', 'R']) {
+    const arm = rig[side];
+    if (!arm) continue;
+    [arm.upper, arm.lower, arm.hand].forEach(keep);
+    const f = arm.fingers || {};
+    FINGERS.forEach((k) => (f[k] || []).forEach(({ bone }) => keep(bone)));
+    arm.palmSign = 0;
+    if (!a.noFingers && arm.hand && arm.end && f.index?.[0] && (f.little?.[0] || f.ring?.[0])) {
+      rig.hasFingers = true;
+      const handDir = worldDir(arm.hand, arm.end, new THREE.Vector3());
+      const across = worldDir(f.index[0].bone, (f.little?.[0] || f.ring[0]).bone, new THREE.Vector3());
+      const n = handDir.cross(across);
+      const sideAxis = worldDir(rig.R.upper, rig.L.upper, new THREE.Vector3()).normalize();
+      const out = side === 'L' ? sideAxis : sideAxis.clone().negate();
+      const ref = new THREE.Vector3(0, -1, 0).addScaledVector(out, -0.6);
+      arm.palmSign = n.dot(ref) >= 0 ? 1 : -1;
+    }
+  }
+  log('body', `Body behaviour: ${rig.hasArms ? 'arms' : 'no arms'}${rig.hasFingers ? ', fingers' : ''}${rig.head ? ', head' : ''} found${a.clips ? ', plus its own animations' : ''}.`);
+}
+function resetRig(a) { a?.rig?.rest?.forEach(([b, q]) => b.quaternion.copy(q)); }
+
+const _cf = { hd: new THREE.Vector3(), ac: new THREE.Vector3(), n: new THREE.Vector3(), d: new THREE.Vector3(), prev: new THREE.Vector3(), axis: new THREE.Vector3() };
+function curlFingers(arm, curls, w) {
+  if (!arm.palmSign || w <= 0.001) return;
+  const f = arm.fingers;
+  const handDir = worldDir(arm.hand, arm.end, _cf.hd).normalize();
+  const across = worldDir(f.index[0].bone, (f.little?.[0] || f.ring[0]).bone, _cf.ac);
+  const n = _cf.n.copy(handDir).cross(across).normalize().multiplyScalar(arm.palmSign);
+  for (const k of FINGERS) {
+    const chain = f[k];
+    if (!chain?.length) continue;
+    const c = (curls[k] || 0) * w;
+    if (c < 0.01) continue;
+    const angles = k === 'thumb' ? [0.45, 0.5, 0.45] : [1.15, 1.35, 0.95];
+    let hasPrev = false;
+    chain.forEach((j, i) => {
+      const next = chain[i + 1]?.bone || j.tip;
+      const d = next ? worldDir(j.bone, next, _cf.d) : (hasPrev ? _cf.d.copy(_cf.prev) : null);
+      if (!d || d.lengthSq() < 1e-12) return;
+      d.normalize();
+      _cf.prev.copy(d); hasPrev = true;
+      const axis = _cf.axis.copy(d).cross(n);
+      if (axis.lengthSq() < 1e-8) return;
+      axis.normalize();
+      rotateBoneWorld(j.bone, _q[3].setFromAxisAngle(axis, c * angles[Math.min(i, 2)]));
+    });
+  }
+}
+
+function updateGestures(dt, f) {
+  const a = avatar;
+  const rig = a?.rig;
+  if (!rig) return;
+  // What the arms should do now: a gesture if one is playing, otherwise talking hands while speaking.
+  let pose = {};
+  const g = gest.cur;
+  let env = 0;
+  if (g) {
+    g.t += dt;
+    if (!g.hold && g.t >= g.dur) { gest.cur = null; showGestureChip(''); }
+    else if (!g.clip) {
+      env = Math.min(1, g.t / 0.35, g.hold ? 1 : (g.dur - g.t) / 0.4);
+      env = env * env * (3 - 2 * env);
+      pose = gesturePose(g, Math.min(1, g.t / g.dur), g.t);
+    }
+  }
+  gest.beat += ((speaking ? f.mouth : 0) - gest.beat) * Math.min(1, dt * 6);
+  const talking = cfg.talkHands && speaking && !gest.cur;
+  if (talking) {
+    gest.talkSwap -= dt;
+    if (gest.talkSwap <= 0) { gest.talkSide = Math.random() < 0.35 ? (gest.talkSide === 'L' ? 'R' : 'L') : gest.talkSide; gest.talkSwap = 2 + Math.random() * 2.5; }
+    pose = talkPose(gest.beat, gest.talkSide);
+    env = 0.55 * intensityAmp() * Math.min(1, 0.35 + gest.beat * 1.4);
+  }
+  // Body frame from the skeleton itself: out to the left, up, forward.
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(a.root.getWorldQuaternion(new THREE.Quaternion()));
+  let left = null;
+  if (rig.hasArms) {
+    left = worldDir(rig.R.upper, rig.L.upper, new THREE.Vector3());
+    left.addScaledVector(up, -left.dot(up)).normalize();
+  }
+  const fwd = left ? new THREE.Vector3().crossVectors(left, up) : null;
+  const toWorld = (v, out, dst) => dst.set(0, 0, 0).addScaledVector(out, v.x).addScaledVector(up, v.y).addScaledVector(fwd, v.z).normalize();
+  const rate = Math.min(1, dt * 9);
+  if (rig.hasArms) {
+    for (const side of ['L', 'R']) {
+      const st = gest.arms[side];
+      const want = pose[side];
+      const goalW = want ? env : 0;
+      st.w += (goalW - st.w) * rate;
+      if (want) {
+        const goal = new THREE.Vector3();
+        st.upper.lerp(goal.set(...want.upper).normalize(), rate).normalize();
+        st.fore.lerp(goal.set(...want.fore).normalize(), rate).normalize();
+        st.hand.lerp(goal.set(...want.hand).normalize(), rate).normalize();
+      }
+      const fingerGoal = want?.fingers || RELAXED;
+      for (const k of FINGERS) st.fingers[k] += ((fingerGoal[k] || 0) - st.fingers[k]) * rate;
+      const arm = rig[side];
+      const out = side === 'L' ? left : left.clone().negate();
+      const t3 = new THREE.Vector3();
+      if (st.w > 0.002) {
+        aimBone(arm.upper, arm.lower, toWorld(st.upper, out, t3), st.w);
+        aimBone(arm.lower, arm.hand, toWorld(st.fore, out, t3), st.w);
+        if (arm.end) aimBone(arm.hand, arm.end, toWorld(st.hand, out, t3), st.w);
+      }
+      if (rig.hasFingers) curlFingers(arm, st.fingers, 1);
+    }
+  }
+  // Head: nods and tilts on top of the face's own movement.
+  const hp = pose.head?.pitch || 0, ht = pose.head?.tilt || 0;
+  gest.head.pitch += (hp * env - gest.head.pitch) * rate;
+  gest.head.tilt += (ht * env - gest.head.tilt) * rate;
+  if (rig.head && left && (Math.abs(gest.head.pitch) > 0.001 || Math.abs(gest.head.tilt) > 0.001)) {
+    rotateBoneWorld(rig.head, _q[3].setFromAxisAngle(left, gest.head.pitch));
+    rotateBoneWorld(rig.head, _q[3].setFromAxisAngle(fwd, gest.head.tilt));
+  } else if (rig.head && !left && Math.abs(gest.head.pitch) > 0.001) {
+    rotateBoneWorld(rig.head, _q[3].setFromAxisAngle(_v[2].set(1, 0, 0), gest.head.pitch));
+  }
+}
+
+// Choose a gesture for a reply: a tag the brain chose, else a cue in the words, else the emotion.
+const NUM_WORDS = { two: 2, three: 3, four: 4, five: 5 };
+function gestureForReply(emotion, text, tagged) {
+  if (tagged && cfg.brainGestures) { playGesture(tagged.name, { n: tagged.n, why: 'chosen by the brain' }); return; }
+  if (!cfg.emotionGestures) return;
+  const num = text.match(/\b([2-5]|two|three|four|five)\b/i);
+  if (num && avatar?.rig?.hasFingers) { playGesture('count', { n: NUM_WORDS[num[1].toLowerCase()] || Number(num[1]), why: `the reply mentions "${num[1]}"` }); return; }
+  if (/\b(over there|this way|that way|upstairs|downstairs|(first|second|ground|top) floor|front desk|counter|on your (left|right)|to (the|your) (left|right)|next door|entrance|outside)\b/i.test(text)) { playGesture('point', { why: 'the reply gives a direction' }); return; }
+  const byEmotion = { happy: 'palms', surprised: 'palms', concerned: 'shrug', sad: 'nod' }[emotion];
+  if (byEmotion) playGesture(byEmotion, { why: `feeling ${emotion}` });
+  if (emotion === 'surprised') avatar?.react?.('surprised');
+}
+
+let avatar = null;
+let avatarSource = null; // { name, blob } of a loaded avatar file, for saving and export
+function setAvatar(next) {
+  if (avatar) { scene.remove(avatar.root); avatar.dispose?.(); }
+  avatar = next;
+  scene.add(avatar.root);
+  gest.cur = null; showGestureChip('');
+  gest.arms.L = newArmState(); gest.arms.R = newArmState();
+  prepareRig(avatar);
+  updateBehaviourNote();
+  refreshPrompt();
+  if (xrActive) avatar.root.visible = false;
+  frame();
+  $('#avatar-kind').textContent = { builtin: 'Built-in, stylised', robot: 'Built-in, non-human', vrm: 'Your VRM avatar', glb: 'Your GLB avatar' }[avatar.kind];
+  $('#avatar-fname').textContent = avatar.label;
+  const isMascot = avatar.kind === 'builtin';
+  $('#builtin-controls').hidden = !isMascot;
+  $('#builtin-title').hidden = !isMascot;
+  const pick = avatar.kind === 'builtin' ? 'mascot' : avatar.kind === 'robot' ? 'robot' : 'own';
+  $$('.pick').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pick === pick)));
+}
+
+async function useStarter(name) {
+  if (name === 'robot') {
+    $('#loading').hidden = false; $('#loading').textContent = 'Loading robot';
+    try {
+      setAvatar(await buildRobot());
+      log('body', 'Using the robot (non-human)');
+    } catch (err) {
+      log('body', `Could not load the robot: ${err.message}. Using the mascot instead.`, true);
+      setAvatar(buildMascot());
+      name = 'mascot';
+    } finally { $('#loading').hidden = true; }
+  } else {
+    setAvatar(buildMascot());
+    log('body', 'Using the mascot (stylised)');
+  }
+  cfg.starter = name;
+  avatarSource = null;
+  saveCfg();
+}
+
+async function loadAvatarBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  $('#loading').hidden = false;
+  $('#loading').textContent = 'Loading avatar';
+  try {
+    const a = await loadAvatarFile(url, name);
+    setAvatar(a);
+    avatarSource = { name, blob };
+    log('body', `Loaded ${name} (${a.kind.toUpperCase()}, ${(blob.size / 1048576).toFixed(1)} MB)`);
+    return true;
+  } catch (err) {
+    log('body', `Could not load ${name}: ${err.message}`, true);
+    showAgent('I couldn\'t load that avatar file. Use a .vrm from VRoid Studio or a single-file .glb.', true);
+    return false;
+  } finally {
+    $('#loading').hidden = true;
+    URL.revokeObjectURL(url);
+  }
+}
+
+function frame() {
+  if (!avatar || xrActive) return;
+  const h = avatar.headY;
+  let target, dist;
+  const k = avatar.frameScale || 1;
+  if (cfg.framing === 'face') { target = new THREE.Vector3(0, h - 0.02, 0); dist = 1.25 * k; }
+  else if (cfg.framing === 'full') { target = new THREE.Vector3(0, avatar.height * 0.5, 0); dist = (avatar.height * 0.72) / Math.tan(THREE.MathUtils.degToRad(15)); }
+  else { target = new THREE.Vector3(0, h - 0.22 * k, 0); dist = 2.0 * k; }
+  controls.target.copy(target);
+  camera.position.set(0, target.y + 0.04, dist);
+  controls.update();
+  $$('#framing button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === cfg.framing)));
+}
+
+/* ================= Face state (expressions, blink, lips) ================= */
+const EMOTIONS = ['neutral', 'happy', 'sad', 'surprised', 'thinking', 'concerned'];
+const face = {
+  mouth: 0, viseme: 'aa', blink: 0,
+  emotion: { happy: 0, sad: 0, surprised: 0, thinking: 0, concerned: 0 },
+  target: 'neutral',
+};
+let speaking = false;
+let mouthPulse = 0;
+let nextBlink = 2;
+let blinkT = -1;
+
+function setEmotion(name) {
+  if (!EMOTIONS.includes(name)) name = 'neutral';
+  if (face.target !== name) log('face', `Expression: ${name}`);
+  face.target = name;
+  const chip = $('#emotion-chip');
+  if (chip) { chip.dataset.mood = name; chip.textContent = `Feeling: ${name}`; }
+}
+function visemeFor(word) {
+  const m = (word || '').toLowerCase().match(/[aeiouy]/);
+  return !m ? 'aa' : { a: 'aa', e: 'ee', i: 'ih', y: 'ih', o: 'oh', u: 'ou' }[m[0]];
+}
+
+/* Audio-driven lips (for the Gemini voice): loudness opens the mouth */
+let audioCtx = null, analyser = null, levelData = null, audioSpeaking = false, currentSource = null, currentDone = null;
+function getAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.connect(audioCtx.destination);
+    levelData = new Float32Array(analyser.fftSize);
+  }
+  return audioCtx;
+}
+function audioLevel() {
+  if (!analyser) return 0;
+  analyser.getFloatTimeDomainData(levelData);
+  let sum = 0;
+  for (let i = 0; i < levelData.length; i++) sum += levelData[i] * levelData[i];
+  return Math.sqrt(sum / levelData.length);
+}
+
+/* ================= AR (Android WebXR) state ================= */
+let hitSource = null, placed = false;
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.12, 0.15, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x4cc3cc })
+);
+reticle.matrixAutoUpdate = false;
+reticle.visible = false;
+scene.add(reticle);
+
+const clock = new THREE.Clock();
+let visemeClock = 0;
+function tick(time, xrFrame) {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+  for (const k of Object.keys(face.emotion)) {
+    const goal = face.target === k ? 1 : 0;
+    face.emotion[k] += (goal - face.emotion[k]) * Math.min(1, dt * 5);
+  }
+  // Blink every 2 to 5 seconds
+  nextBlink -= dt;
+  if (nextBlink <= 0 && blinkT < 0) { blinkT = 0; nextBlink = 2 + Math.random() * 3; }
+  if (blinkT >= 0) { blinkT += dt; face.blink = Math.sin(Math.min(1, blinkT / 0.16) * Math.PI); if (blinkT > 0.16) { blinkT = -1; face.blink = 0; } }
+  // Lips: follow the audio loudness when we have the audio, otherwise a speech-like rhythm
+  let goal = 0;
+  if (audioSpeaking) {
+    const lvl = audioLevel();
+    goal = Math.min(1, Math.max(0, (lvl - 0.012) * 9));
+    visemeClock -= dt;
+    if (goal > 0.15 && visemeClock <= 0) { face.viseme = ['aa', 'oh', 'ee', 'aa', 'ih', 'ou'][Math.floor(Math.random() * 6)]; visemeClock = 0.09 + Math.random() * 0.08; }
+  } else if (speaking) {
+    mouthPulse = Math.max(0, mouthPulse - dt * 3);
+    goal = 0.25 + 0.45 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.1)) + mouthPulse * 0.3;
+  }
+  face.mouth += (goal - face.mouth) * Math.min(1, dt * 18);
+  resetRig(avatar);
+  avatar?.update(dt, face);
+  updateGestures(dt, face);
+
+  if (xrActive && xrFrame && hitSource) {
+    const refSpace = renderer.xr.getReferenceSpace();
+    const hits = xrFrame.getHitTestResults(hitSource);
+    if (hits.length) {
+      const pose = hits[0].getPose(refSpace);
+      reticle.visible = true;
+      reticle.matrix.fromArray(pose.transform.matrix);
+    } else reticle.visible = false;
+  }
+  if (!xrActive) controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ================= Voice: mouth (text to speech) ================= */
+const hasTTS = 'speechSynthesis' in window;
+const isEdge = /Edg\//.test(navigator.userAgent);
+const isNatural = (v) => /natural|neural|online/i.test(v.name);
+let voices = [];
+function loadVoices() {
+  if (!hasTTS) return;
+  voices = speechSynthesis.getVoices().filter((v) => v.name && !/undefined/i.test(v.name)).sort((a, b) =>
+    (isNatural(b) - isNatural(a)) || ((b.lang === cfg.listenLang) - (a.lang === cfg.listenLang)) || a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+  const sel = $('#f-voice');
+  sel.innerHTML = '';
+  if (!voices.length) { sel.innerHTML = '<option value="">Default voice</option>'; return; }
+  for (const v of voices) {
+    const o = document.createElement('option');
+    o.value = v.name; o.textContent = `${isNatural(v) ? 'Natural: ' : ''}${v.name} (${v.lang})`;
+    sel.appendChild(o);
+  }
+  const pick = voices.find((v) => v.name === cfg.voiceName)
+    || voices.find((v) => isNatural(v) && v.lang === 'en-IN')
+    || voices.find((v) => v.lang === 'en-IN') || voices.find((v) => isNatural(v) && v.lang.startsWith('en'))
+    || voices.find((v) => v.lang.startsWith('en-GB')) || voices.find((v) => v.lang.startsWith('en')) || voices[0];
+  sel.value = pick.name;
+  if (!cfg.voiceName) cfg.voiceName = pick.name;
+  const naturalCount = voices.filter(isNatural).length;
+  $('#edge-tip').hidden = naturalCount > 0;
+  $('#voice-hint').textContent = naturalCount
+    ? `${naturalCount} natural voices found. They are listed first.`
+    : `${voices.length} voices found${isEdge ? '' : ' in this browser'}.`;
+}
+if (hasTTS) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+
+function estimateSeconds(text) { return Math.max(1.2, text.split(/\s+/).length * 0.42 / (cfg.rate || 1)); }
+
+function speakBrowser(text) {
+  return new Promise((resolve) => {
+    if (!hasTTS) { speaking = true; setTimeout(resolve, estimateSeconds(text) * 1000); return; }
+    speechSynthesis.cancel();
+    const parts = text.match(/[^.!?।]+[.!?।]*\s*/g) || [text];
+    const voice = voices.find((v) => v.name === cfg.voiceName);
+    log('voice', `Speaking with ${voice ? voice.name : 'the default voice'}`);
+    let i = 0;
+    const next = () => {
+      if (i >= parts.length || !speaking) { resolve(); return; }
+      const chunk = parts[i++];
+      const u = new SpeechSynthesisUtterance(chunk);
+      if (voice) { u.voice = voice; u.lang = voice.lang; }
+      u.rate = Number(cfg.rate) || 1;
+      u.pitch = Number(cfg.pitch) || 1;
+      let done = false;
+      const go = () => { if (!done) { done = true; clearTimeout(guard); next(); } };
+      const guard = setTimeout(go, (estimateSeconds(chunk) + 4) * 1000); // some voices never fire 'end'
+      u.onboundary = (ev) => {
+        const w = chunk.substr(ev.charIndex, ev.charLength || 8);
+        face.viseme = visemeFor(w);
+        mouthPulse = 1;
+      };
+      u.onstart = markVoiceStart;
+      u.onend = go;
+      u.onerror = go;
+      speechSynthesis.speak(u);
+    };
+    speaking = true;
+    next();
+  });
+}
+
+/* Gemini voice (text to speech) */
+let ttsRoute = null; // 'interactions' or 'generate', learned on first success
+let geminiVoiceCooldown = 0;
+class VoiceError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
+async function errorFrom(res) {
+  let detail = '';
+  try { const j = await res.json(); detail = j.error?.message || ''; } catch { /* ignore */ }
+  return new VoiceError(detail || res.statusText || `HTTP ${res.status}`, res.status);
+}
+function findAudio(o) {
+  if (!o || typeof o !== 'object') return null;
+  if (typeof o.data === 'string' && (o.type === 'audio' || /^audio/.test(o.mime_type || o.mimeType || ''))) return { data: o.data, mime: o.mime_type || o.mimeType || 'audio/wav' };
+  if (o.inlineData?.data) return { data: o.inlineData.data, mime: o.inlineData.mimeType || 'audio/L16;rate=24000' };
+  for (const v of Object.values(o)) { const r = findAudio(v); if (r) return r; }
+  return null;
+}
+async function geminiTTS(text, style) {
+  const key = keyFor('gemini');
+  if (!key) throw new VoiceError('No Gemini key yet.', 0);
+  const model = cfg.ttsModel || DEFAULTS.ttsModel;
+  const headers = { 'Content-Type': 'application/json', 'x-goog-api-key': key };
+  if (ttsRoute !== 'generate') {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        model,
+        input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }] }],
+        response_format: { type: 'audio', mime_type: 'audio/wav' },
+        generation_config: { speech_config: [{ voice: cfg.geminiVoice || 'Kore' }] },
+      }),
+    });
+    if (res.ok) {
+      const audio = findAudio(await res.json());
+      if (!audio) throw new VoiceError('The voice reply had no audio.', 200);
+      ttsRoute = 'interactions';
+      return audio;
+    }
+    if (ttsRoute === 'interactions' || ![400, 404].includes(res.status)) throw await errorFrom(res);
+  }
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `Read this aloud. Delivery: ${style}\n\n${text}` }] }],
+      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: cfg.geminiVoice || 'Kore' } } } },
+    }),
+  });
+  if (!res.ok) throw await errorFrom(res);
+  const audio = findAudio(await res.json());
+  if (!audio) throw new VoiceError('The voice reply had no audio.', 200);
+  ttsRoute = 'generate';
+  return audio;
+}
+async function decodeAudio(audio) {
+  const ctx = getAudio();
+  const bytes = Uint8Array.from(atob(audio.data), (c) => c.charCodeAt(0));
+  const isWav = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46; // "RIFF"
+  if (isWav) return ctx.decodeAudioData(bytes.buffer.slice(0));
+  const rate = Number((audio.mime.match(/rate=(\d+)/) || [])[1]) || 24000;
+  const samples = new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
+  const buf = ctx.createBuffer(1, samples.length, rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) ch[i] = samples[i] / 32768;
+  return buf;
+}
+/* Streaming: play the first audio chunks while the rest is still being generated */
+let ttsStream = true; // switched off if the stream route fails for reasons other than limits
+let streamSources = [], streamAbort = null;
+function pcmToBuffer(ctx, bytes, rate) {
+  const n = Math.floor(bytes.length / 2);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, n * 2);
+  const buf = ctx.createBuffer(1, n, rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 32768;
+  return buf;
+}
+async function speakGeminiStream(text, style) {
+  const ctx = getAudio();
+  const key = keyFor('gemini');
+  if (!key) throw new VoiceError('No Gemini key yet.', 0);
+  streamAbort = new AbortController();
+  const t0 = performance.now();
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST', signal: streamAbort.signal,
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({
+      model: cfg.ttsModel || DEFAULTS.ttsModel,
+      stream: true,
+      input: [{ type: 'user_input', content: [{ type: 'text', text, annotations: [{ type: 'speech_metadata', style }] }] }],
+      response_format: { type: 'audio', mime_type: 'audio/l16', sample_rate: 24000 },
+      generation_config: { speech_config: [{ voice: cfg.geminiVoice || 'Kore' }] },
+    }),
+  });
+  if (!res.ok || !res.body) throw await errorFrom(res);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let pending = '', carry = new Uint8Array(0), nextTime = 0, total = 0, first = true;
+  let lastEnded = Promise.resolve();
+  const schedule = (b64, mime) => {
+    let bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) bytes = bytes.subarray(44); // skip a WAV header
+    if (carry.length) { const m = new Uint8Array(carry.length + bytes.length); m.set(carry); m.set(bytes, carry.length); bytes = m; }
+    const even = bytes.length - (bytes.length % 2);
+    carry = bytes.slice(even);
+    if (!even || !speaking) return;
+    const rate = Number(((mime || '').match(/rate=(\d+)/) || [])[1]) || 24000;
+    const buf = pcmToBuffer(ctx, bytes.subarray(0, even), rate);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(analyser);
+    const start = Math.max(nextTime, ctx.currentTime + 0.04);
+    src.start(start);
+    nextTime = start + buf.duration;
+    total += buf.duration;
+    streamSources.push(src);
+    lastEnded = new Promise((r) => { src.onended = r; });
+    if (first) { first = false; audioSpeaking = true; markVoiceStart(); log('voice', `Gemini voice ${cfg.geminiVoice} started after ${((performance.now() - t0) / 1000).toFixed(1)} s (streaming)`); }
+  };
+  const handleLine = (line) => {
+    line = line.trim();
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    try { const audio = findAudio(JSON.parse(payload)); if (audio) schedule(audio.data, audio.mime); } catch { /* skip partial events */ }
+  };
+  while (speaking) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += dec.decode(value, { stream: true });
+    let i;
+    while ((i = pending.indexOf('\n')) >= 0) { handleLine(pending.slice(0, i)); pending = pending.slice(i + 1); }
+  }
+  handleLine(pending);
+  if (first) throw new VoiceError('The voice stream had no audio.', 200);
+  await lastEnded;
+  streamSources = [];
+  audioSpeaking = false;
+}
+
+async function speakGemini(text, emotion) {
+  const ctx = getAudio();
+  if (ctx.state === 'suspended') await ctx.resume();
+  const style = `${cfg.voiceStyle || ''} Emotion for this line: ${emotion === 'neutral' ? 'calm and friendly' : emotion}.`.trim();
+  if (ttsStream) {
+    try { await speakGeminiStream(text, style); return; }
+    catch (err) {
+      if (err.name === 'AbortError' || !speaking) return;
+      if (err.status === 429 || err.status === 401 || err.status === 403 || err.status === 0) throw err;
+      ttsStream = false;
+      log('voice', `Streaming voice not available (${err.message}). Waiting for the whole clip instead.`);
+    }
+  }
+  const t0 = performance.now();
+  const audio = await geminiTTS(text, style);
+  const buf = await decodeAudio(audio);
+  log('voice', `Gemini voice ${cfg.geminiVoice} ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (${buf.duration.toFixed(1)} s of speech)`);
+  if (!speaking) return;
+  await new Promise((resolve) => {
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(analyser);
+    src.onended = () => { audioSpeaking = false; currentSource = null; currentDone = null; resolve(); };
+    currentSource = src;
+    currentDone = resolve;
+    audioSpeaking = true;
+    markVoiceStart();
+    src.start();
+  });
+}
+
+async function speak(text, emotion = 'neutral') {
+  pauseEars();
+  stopSpeaking();
+  speaking = true;
+  setState('speaking');
+  try {
+    if (!cfg.autoSpeak) {
+      await new Promise((r) => setTimeout(r, estimateSeconds(text) * 1000));
+    } else if (cfg.voiceSource === 'gemini' && Date.now() > geminiVoiceCooldown && keyFor('gemini')) {
+      try {
+        await speakGemini(text, emotion);
+      } catch (err) {
+        const why = err.status === 429 ? 'The free voice limit is reached.' : err.status === 401 || err.status === 403 ? 'The Gemini key was not accepted.' : err.status === 0 ? err.message : `Gemini voice error: ${err.message}`;
+        log('voice', `${why} Using the browser voice for now.`, true);
+        if (err.status === 429) geminiVoiceCooldown = Date.now() + 60000;
+        if (speaking) await speakBrowser(text);
+      }
+    } else {
+      if (cfg.voiceSource === 'gemini' && !keyFor('gemini')) log('voice', 'No Gemini key for the voice. Add it in the Voice tab. Using the browser voice.', true);
+      else if (cfg.voiceSource === 'gemini') log('voice', 'Gemini voice is resting after hitting its limit. Using the browser voice.');
+      await speakBrowser(text);
+    }
+  } finally {
+    speaking = false;
+    audioSpeaking = false;
+    setState('idle');
+  }
+}
+function stopSpeaking() {
+  if (hasTTS) speechSynthesis.cancel();
+  if (currentSource) { try { currentSource.onended = null; currentSource.stop(); } catch { /* already stopped */ } currentSource = null; }
+  if (currentDone) { const done = currentDone; currentDone = null; done(); }
+  if (streamAbort) { try { streamAbort.abort(); } catch { /* done */ } streamAbort = null; }
+  streamSources.forEach((src) => { try { src.onended?.(); src.onended = null; src.stop(); } catch { /* stopped */ } });
+  streamSources = [];
+  speaking = false;
+  audioSpeaking = false;
+}
+
+/* ================= Voice: ears (speech to text) ================= */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recId = 0, listening = false, convoOn = false, quietCount = 0, awaitingQuestion = 0;
+if (!SR) {
+  $('#mic').disabled = true;
+  $('#mic-note').hidden = false;
+  $('#mic-note').textContent = 'Voice input needs Chrome or Edge. You can still type.';
+  $('#ears-hint').textContent = 'This browser cannot listen. Use Chrome or Edge for voice input.';
+} else {
+  $('#ears-hint').textContent = 'Chrome and Edge send the audio to their own speech service to turn it into text.';
+}
+const LISTEN_HINTS = {
+  push: 'Most control: the microphone is only on while you press it. Best in a busy classroom.',
+  handsfree: 'More natural: after each reply it listens again. Press the mic to stop. The agent pauses its ears while it speaks so it does not hear itself.',
+  wake: 'Most human-like: the microphone stays on and the agent answers when it hears its name, for example "Ira, when do you open?". In a shared room it may pick up other voices, so use headphones.',
+};
+function updateMic() {
+  const loop = cfg.listenMode !== 'push';
+  const on = loop ? convoOn : listening;
+  const mic = $('#mic');
+  mic.setAttribute('aria-pressed', String(on));
+  mic.setAttribute('aria-label', loop ? (on ? 'Stop listening' : 'Start listening') : (on ? 'Stop' : 'Talk'));
+  $('#say').placeholder = cfg.listenMode === 'wake'
+    ? (convoOn ? `Say "${wakeWord()}" and your question, or type` : 'Press the mic to start always-listening, or type')
+    : cfg.listenMode === 'handsfree' ? 'Press the mic once to talk hands-free, or type' : 'Type, or press the mic and speak';
+}
+function wakeWord() { return (cfg.name || 'agent').trim().split(/\s+/)[0]; }
+function micErrorText(code) {
+  return code === 'not-allowed' || code === 'service-not-allowed'
+    ? 'Microphone permission was refused. Allow it in the address bar and try again.'
+    : code === 'no-speech' ? 'I did not hear anything. Try again a little closer to the mic.'
+    : code === 'network' ? 'Speech recognition needs an internet connection.'
+    : `Listening stopped (${code}).`;
+}
+function pauseEars() {
+  if (rec) { recId++; try { rec.abort(); } catch { /* not running */ } rec = null; }
+  if (listening) { listening = false; updateMic(); }
+}
+function resumeEars(delay = 300) {
+  setTimeout(() => {
+    if (!convoOn || busy || speaking || listening) return;
+    if (cfg.listenMode === 'wake') listenWake(); else listenOnce();
+  }, delay);
+}
+function startConvo() {
+  if (!SR) return;
+  convoOn = true; quietCount = 0;
+  log('ear', cfg.listenMode === 'wake' ? `Always listening. Say "${wakeWord()}" to talk.` : 'Hands-free turns are on.');
+  updateMic();
+  resumeEars(0);
+}
+function stopConvo(note) {
+  convoOn = false;
+  pauseEars();
+  updateMic();
+  if (!busy && !speaking) setState('idle');
+  if (note) { log('ear', note); $('#mic-note').hidden = false; $('#mic-note').textContent = note; }
+}
+
+const pauseMs = () => (Number(cfg.endPause) || 1) * 1000;
+
+/* Turn-taking: the browser is slow to decide that you have finished a sentence, so the studio
+   decides itself. When the words stop changing for the chosen pause, the turn is over. */
+function listenOnce() {
+  if (!SR || busy) return;
+  stopSpeaking();
+  $('#mic-note').hidden = true;
+  const id = ++recId;
+  rec = new SR();
+  rec.lang = cfg.listenLang;
+  rec.interimResults = true;
+  rec.continuous = true;
+  let text = '', quietTimer = 0;
+  const idleTimer = setTimeout(() => { if (id === recId && !text.trim()) { try { rec?.stop(); } catch { /* ended */ } } }, 9000);
+  const finish = (how) => {
+    if (id !== recId) return;
+    clearTimeout(quietTimer); clearTimeout(idleTimer);
+    const said = text.trim();
+    pauseEars();
+    if (!busy) setState('idle');
+    if (said) {
+      quietCount = 0;
+      log('ear', `Heard: "${said}"${how ? ` (${how})` : ''}`);
+      converse(said);
+      return;
+    }
+    if (convoOn) {
+      if (cfg.listenMode === 'wake') { resumeEars(100); return; }
+      quietCount++;
+      if (quietCount >= 3) stopConvo('Hands-free paused after a quiet spell. Press the mic to carry on.');
+      else resumeEars(150);
+    }
+  };
+  rec.onresult = (e) => {
+    if (id !== recId) return;
+    let t = '';
+    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    text = t;
+    showUser(t);
+    clearTimeout(quietTimer);
+    if (t.trim()) quietTimer = setTimeout(() => finish(`you paused for ${cfg.endPause || 1} s`), pauseMs());
+  };
+  rec.onerror = (e) => {
+    if (id !== recId) return;
+    if (e.error === 'aborted') return;
+    if (e.error === 'no-speech') { if (!convoOn) { log('ear', micErrorText(e.error)); showAgent(micErrorText(e.error), true); } return; } // onend follows
+    const why = micErrorText(e.error);
+    log('ear', why, true);
+    showAgent(why, true);
+    if (convoOn) stopConvo();
+  };
+  rec.onend = () => finish(''); // the browser ended on its own, or the mic was pressed again
+  try { rec.start(); } catch { /* already started */ }
+  listening = true;
+  updateMic();
+  setState('listening');
+  log('ear', `Listening (${cfg.listenLang})`);
+}
+
+/* Always listening: find the agent's name, allowing for near misses ("Ira" heard as "Era" or "Aira"). */
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+function findName(text) {
+  const name = wakeWord().toLowerCase().normalize('NFKD').replace(/[^\p{L}]/gu, '');
+  if (!name) return null;
+  const allowed = name.length >= 6 ? 2 : name.length >= 3 ? 1 : 0;
+  let hit = null;
+  for (const m of text.matchAll(/[\p{L}']+/gu)) {
+    const w = m[0].toLowerCase().normalize('NFKD').replace(/[^\p{L}]/gu, '');
+    const close = w === name
+      || (w.length >= name.length - 1 && Math.abs(w.length - name.length) <= 2 && editDistance(w, name) <= allowed)
+      || (name.length >= 4 && w.startsWith(name.slice(0, 4)));
+    if (close) hit = { index: m.index, end: m.index + m[0].length, word: m[0] };
+  }
+  return hit; // the last mention counts: anything said before it is not meant for the agent
+}
+
+function listenWake() {
+  if (!SR || busy) return;
+  $('#mic-note').hidden = true;
+  const id = ++recId;
+  rec = new SR();
+  rec.lang = cfg.listenLang;
+  rec.interimResults = true;
+  rec.continuous = true;
+  let from = 0, count = 0, text = '', quietTimer = 0;
+  const handleHeard = (q, note) => { pauseEars(); log('ear', `Heard: "${q}"${note ? ` (${note})` : ''}`); converse(q); };
+  const decide = () => {
+    if (id !== recId) return;
+    const t = text.trim();
+    const m = findName(t);
+    if (!m) { from = count; text = ''; return; } // talk not meant for the agent: let it go
+    const question = t.slice(m.end).replace(/^[\s,.!?]+/, '').trim();
+    if (question.split(/\s+/).filter(Boolean).length >= 2) { handleHeard(question, `heard its name as "${m.word}"`); return; }
+    // Only the name: answer "Yes?" and take the next sentence as the question.
+    log('ear', `Heard its name as "${m.word}". Waiting for the question.`);
+    pauseEars();
+    showAgent('Yes?');
+    setEmotion('happy');
+    setTimeout(() => { if (convoOn && !busy && !speaking) listenOnce(); }, 50);
+  };
+  rec.onresult = (e) => {
+    if (id !== recId) return;
+    count = e.results.length;
+    let t = '';
+    for (let i = from; i < e.results.length; i++) t += e.results[i][0].transcript;
+    text = t;
+    if (findName(t)) showUser(t);
+    clearTimeout(quietTimer);
+    if (t.trim()) quietTimer = setTimeout(decide, pauseMs());
+  };
+  rec.onerror = (e) => {
+    if (id !== recId) return;
+    if (['aborted', 'no-speech'].includes(e.error)) return;
+    const why = micErrorText(e.error);
+    log('ear', why, true);
+    showAgent(why, true);
+    stopConvo();
+  };
+  rec.onend = () => {
+    if (id !== recId) return;
+    clearTimeout(quietTimer);
+    listening = false; rec = null;
+    if (convoOn) resumeEars(100); // the browser ends long sessions on its own; start again
+    else { updateMic(); setState('idle'); }
+  };
+  try { rec.start(); } catch { /* already started */ }
+  listening = true;
+  updateMic();
+  setState('wake');
+}
+
+function whenIdle(fn, tries = 40) { if (!busy && !speaking) fn(); else if (tries > 0) setTimeout(() => whenIdle(fn, tries - 1), 50); }
+$('#mic').onclick = () => {
+  getAudio();
+  if (speaking) { // interrupt the agent, then listen
+    stopSpeaking();
+    if (cfg.listenMode === 'push') { whenIdle(listenOnce); return; }
+    if (convoOn) return; // the loop resumes listening once the reply ends
+  }
+  if (cfg.listenMode === 'push') {
+    if (listening) rec?.stop(); else listenOnce();
+    return;
+  }
+  if (convoOn) stopConvo(); else { stopSpeaking(); startConvo(); }
+};
+
+/* ================= Brain ================= */
+function buildPrompt() {
+  const c = cfg;
+  return [
+    `You are ${c.name || 'an assistant'}, an AI agent with a 3D body. You speak out loud to a person who can see you.`,
+    c.role && `Your job: ${c.role}`,
+    c.audience && `Who you talk to: ${c.audience}`,
+    c.personality && `Your personality: ${c.personality}`,
+    c.style && `How you speak: ${c.style}`,
+    c.knowledge && `What you know. Use this first, and say so when a question is not covered:\n"""\n${c.knowledge}\n"""`,
+    c.boundaries && `Your boundaries: ${c.boundaries}`,
+    bodyAwareness(),
+    `Rules for a spoken, embodied conversation:
+- Reply in ${c.language || 'English'}.
+- Keep each reply short: one to three sentences, like natural speech. No lists, no markdown, no emoji.
+- Start every reply with exactly one emotion tag from this list: [neutral] [happy] [sad] [surprised] [thinking] [concerned]. The tag sets your facial expression and is not read aloud.
+- If you do not know something, say so plainly. Never invent facts.`,
+  ].filter(Boolean).join('\n\n');
+}
+// The agent is told what body it has and what that body can do, so its words and its body agree.
+function bodyAwareness() {
+  const kind = avatar?.kind;
+  const body = kind === 'robot' ? 'a small, friendly robot body' : kind === 'builtin' ? 'a cartoon, human-like body' : kind ? 'a 3D avatar body' : 'a 3D body';
+  const rig = avatar?.rig;
+  const can = [];
+  can.push('your face shows the emotion you choose');
+  if (rig?.head) can.push('you can nod and tilt your head');
+  if (rig?.hasArms) {
+    if (cfg.talkHands) can.push('your hands move as you speak');
+    if (cfg.emotionGestures) can.push('you put a hand to your chin while you think');
+  }
+  const lines = [`Your body: you have ${body}, standing in front of the person. ${can.join(', ').replace(/^./, (x) => x.toUpperCase())}.`];
+  if (cfg.brainGestures && rig?.hasArms) {
+    const list = ['[wave]', '[namaste]', '[point]', '[open palms]', '[shrug]', '[chin]', '[nod]'];
+    if (rig.hasFingers) list.push('[count:N] (N from 1 to 5, counts on your fingers)');
+    lines.push(`You may make one gesture per reply. Put its tag straight after the emotion tag: ${list.join(' ')}. Use a gesture only when a person would naturally make it, such as waving hello, pointing when giving directions, or counting when listing a number. Most replies need no gesture. Gesture tags are not read aloud.`);
+  } else if (rig?.hasArms && !cfg.emotionGestures && !cfg.talkHands) {
+    lines.push('Your arms stay still for now.');
+  }
+  return lines.join('\n');
+}
+function refreshPrompt() { $('#prompt-preview').textContent = buildPrompt(); }
+
+let history = [];
+let busy = false;
+let turnT0 = 0, turnBrainS = 0, turnVoiced = true;
+function markVoiceStart() {
+  if (turnVoiced || !turnT0) return;
+  turnVoiced = true;
+  const total = (performance.now() - turnT0) / 1000;
+  log('voice', `Reply started ${total.toFixed(1)} s after your turn ended: brain ${turnBrainS.toFixed(1)} s, voice ${(total - turnBrainS).toFixed(1)} s`);
+}
+
+const GESTURE_TAG = /\[\s*(?:gesture\s*:\s*)?(wave|namaste|point|open palms|palms|shrug|chin|hand to chin|nod|count(?:\s*:\s*([1-5]))?)\s*\]/i;
+function parseReply(raw) {
+  const m = raw.match(/^\s*\[(\w+)\]\s*/);
+  const emotion = m ? m[1].toLowerCase() : 'neutral';
+  const g = raw.match(GESTURE_TAG);
+  let gesture = null;
+  if (g) {
+    const k = g[1].toLowerCase();
+    gesture = { name: k.startsWith('count') ? 'count' : k === 'open palms' ? 'palms' : k === 'hand to chin' ? 'chin' : k, n: Number(g[2]) || 3 };
+  }
+  const text = raw.replace(/\[(neutral|happy|sad|surprised|thinking|concerned)\]/gi, '').replace(new RegExp(GESTURE_TAG.source, 'gi'), '').replace(/[*_#`]/g, '').replace(/\s{2,}/g, ' ').trim();
+  return { emotion, text, gesture };
+}
+
+const STOP = new Set('the and for are you your what when where which who how does did can could would should with from this that have has about there their them they into out our any some like just get got tell please want need know'.split(' '));
+const words = (t) => (t.toLowerCase().match(/[a-zऀ-෿]{3,}/g) || []).filter((w) => !STOP.has(w));
+const same = (a, b) => a === b || (a.length > 3 && b.length > 3 && a.slice(0, 4) === b.slice(0, 4));
+
+function rehearsalReply(userText) {
+  if (/^(hi|hello|hey|namaste|hola)\b/i.test(userText.trim())) return `[happy] ${cfg.greeting}`;
+  const lines = (cfg.knowledge || '').split(/\n+/).map((l) => l.trim()).filter((l) => l && !/^example knowledge/i.test(l));
+  const lineWords = lines.map(words);
+  const q = [...new Set(words(userText))];
+  // Words that appear in many lines (like the subject's own name) count for less.
+  const weight = (w) => 1 / (1 + lineWords.filter((lw) => lw.some((x) => same(x, w))).length);
+  let best = '', score = 0;
+  lines.forEach((line, i) => {
+    const s = q.filter((w) => lineWords[i].some((x) => same(x, w))).reduce((a, w) => a + weight(w), 0);
+    if (s > score) { score = s; best = line; }
+  });
+  if (best) return `[neutral] ${best}`;
+  return '[thinking] I am in rehearsal mode, so I can only repeat what is in my knowledge box. Add a free API key in the Brain tab to make me think.';
+}
+
+class BrainError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
+
+async function callOpenAICompatible(url, key, model, messages, extra = {}, omit = []) {
+  const body = { model, messages, max_tokens: 800, temperature: 0.7, ...extra };
+  omit.forEach((k) => delete body[k]);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { const j = await res.json(); detail = j.error?.message || j[0]?.error?.message || ''; } catch { /* ignore */ }
+    throw new BrainError(detail || res.statusText, res.status);
+  }
+  const j = await res.json();
+  const text = j.choices?.[0]?.message?.content;
+  if (!text) throw new BrainError('The model returned an empty reply.', 200);
+  return text;
+}
+
+async function callGeminiNative(key, model, messages) {
+  const sys = messages.find((m) => m.role === 'system')?.content || '';
+  const contents = messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents, generationConfig: { maxOutputTokens: 800 } }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch { /* ignore */ }
+    throw new BrainError(detail || res.statusText, res.status);
+  }
+  const j = await res.json();
+  const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
+  if (!text) throw new BrainError('The model returned an empty reply.', 200);
+  return text;
+}
+
+async function callClaude(key, model, messages) {
+  const system = messages.find((m) => m.role === 'system')?.content || '';
+  const turns = [];
+  messages.filter((m) => m.role !== 'system').forEach((m) => {
+    const last = turns[turns.length - 1];
+    if (last && last.role === m.role) last.content += '\n' + m.content; // Claude needs turns to alternate
+    else turns.push({ role: m.role, content: m.content });
+  });
+  if (turns[0]?.role === 'assistant') turns.unshift({ role: 'user', content: '(A visitor walks up to you.)' });
+  const res = await fetch(PROVIDERS.claude.url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true', // allows a call straight from the browser with the visitor's own key
+    },
+    body: JSON.stringify({ model, max_tokens: 800, system, messages: turns }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json()).error?.message || ''; } catch { /* ignore */ }
+    throw new BrainError(detail || res.statusText, res.status);
+  }
+  const j = await res.json();
+  const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  if (!text) throw new BrainError('The model returned an empty reply.', 200);
+  return text;
+}
+
+const geminiEffort = {}; // the lightest thinking setting each Gemini model accepted
+const isParamError = (err) => err.status === 400 && /unsupported|not supported|unrecognized|unknown (parameter|field|name)|invalid.*(temperature|max_tokens|reasoning)/i.test(err.message);
+
+const needsKey = () => cfg.provider !== 'rehearsal' && !keyFor(cfg.provider);
+
+async function think(messages) {
+  const p = cfg.provider;
+  if (p === 'rehearsal') {
+    await new Promise((r) => setTimeout(r, 450));
+    return rehearsalReply(messages[messages.length - 1].content);
+  }
+  const key = keyFor(p);
+  if (!key) throw new BrainError('No API key yet. Paste a free key in the Brain tab, or switch to rehearsal mode.', 0);
+  const model = cfg.model || PROVIDERS[p].model;
+  const url = p === 'custom' ? cfg.customUrl : PROVIDERS[p].url;
+  if (!url) throw new BrainError('Add the chat completions URL for your service in the Brain tab.', 0);
+  if (p === 'claude') return callClaude(key, model, messages);
+  if (p === 'gemini') {
+    // Less thinking means a quicker spoken reply. Try the lightest setting first and remember what works.
+    const known = geminiEffort[model];
+    const tries = known !== undefined ? [known] : ['minimal', 'low', null];
+    for (const effort of tries) {
+      try {
+        const out = await callOpenAICompatible(url, key, model, messages, effort ? { reasoning_effort: effort } : {});
+        geminiEffort[model] = effort;
+        return out;
+      } catch (err) {
+        if (err.status === 400 && /reasoning|thinking|effort/i.test(err.message) && effort !== tries[tries.length - 1]) continue;
+        if (!(err instanceof BrainError)) return callGeminiNative(key, model, messages); // network or CORS problem: try Gemini's own API
+        throw err;
+      }
+    }
+  }
+  const extra = p === 'openai' ? { max_completion_tokens: 800 } : {};
+  const omit = p === 'openai' ? ['max_tokens', 'temperature'] : [];
+  try {
+    return await callOpenAICompatible(url, key, model, messages, extra, omit);
+  } catch (err) {
+    if (isParamError(err)) return callOpenAICompatible(url, key, model, messages, {}, ['max_tokens', 'temperature']); // newer models refuse some settings
+    throw err;
+  }
+}
+
+function friendlyError(err) {
+  const s = err.status;
+  if (!(err instanceof BrainError)) return 'I could not reach the AI service. Check your internet connection, or try another provider.';
+  if (s === 0) return err.message;
+  if (s === 401 || s === 403) return 'The AI service did not accept the API key. Check that you pasted the whole key.';
+  if (s === 429) return 'The free tier limit is reached for now. Wait a minute and try again.';
+  if (s === 404 || /not found|does not exist/i.test(err.message)) return `The model name "${cfg.model || PROVIDERS[cfg.provider]?.model}" was not found. Copy the current free model name from the provider's site.`;
+  return err.message;
+}
+
+async function converse(userText) {
+  if (busy || !userText.trim()) return;
+  busy = true;
+  pauseEars();
+  stopSpeaking();
+  $('#start-btn').hidden = true;
+  showUser(userText);
+  history.push({ role: 'user', content: userText });
+  history = history.slice(-12);
+  setState('thinking');
+  setEmotion('thinking');
+  if (cfg.emotionGestures) playGesture('chin', { hold: true, why: 'thinking' });
+  const messages = [{ role: 'system', content: buildPrompt() }, ...history];
+  const model = cfg.provider === 'rehearsal' ? 'rehearsal script' : (cfg.model || PROVIDERS[cfg.provider].model);
+  log('brain', `Sent ${messages.length} messages to ${model}`);
+  const t0 = performance.now();
+  turnT0 = t0; turnVoiced = false;
+  try {
+    const raw = await think(messages);
+    turnBrainS = (performance.now() - t0) / 1000;
+    const { emotion, text, gesture } = parseReply(raw);
+    releaseGesture('chin');
+    log('brain', `Replied in ${((performance.now() - t0) / 1000).toFixed(1)} s: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}"`);
+    history.push({ role: 'assistant', content: raw.trim() });
+    setEmotion(emotion);
+    if (gesture) log('brain', `Chose the gesture: ${gesture.name}${gesture.name === 'count' ? ` ${gesture.n}` : ''}`);
+    gestureForReply(emotion, text, gesture);
+    showAgent(text);
+    await speak(text, emotion);
+  } catch (err) {
+    const msg = friendlyError(err);
+    log('brain', `${msg}${err.status ? ` (HTTP ${err.status})` : ''}`, true);
+    history.pop();
+    releaseGesture('chin');
+    setEmotion('concerned');
+    showAgent(msg, true);
+    turnVoiced = true;
+    if (err.status === 0 && needsKey() && (document.body.classList.contains('present') || document.body.classList.contains('embed'))) openKeyDialog();
+  } finally {
+    busy = false;
+    setState('idle');
+    setTimeout(() => { if (!busy) setEmotion('neutral'); }, 1800);
+    if (convoOn) resumeEars(250);
+  }
+}
+
+$('#composer').addEventListener('submit', (e) => {
+  e.preventDefault();
+  getAudio();
+  const v = $('#say').value.trim();
+  if (!v) return;
+  $('#say').value = '';
+  converse(v);
+});
+
+async function greet() {
+  getAudio();
+  $('#start-btn').hidden = true;
+  setEmotion('happy');
+  greetGesture();
+  showAgent(cfg.greeting);
+  history = [{ role: 'assistant', content: `[happy] ${cfg.greeting}` }];
+  await speak(cfg.greeting, 'happy');
+  setTimeout(() => setEmotion('neutral'), 1200);
+  if (cfg.listenMode !== 'push' && SR) startConvo();
+}
+$('#start-btn').onclick = greet;
+$$('#try-gestures [data-g]').forEach((b) => { b.onclick = () => { getAudio(); playGesture(b.dataset.g, { n: Number(b.dataset.n) || 3, why: 'tried from the Body tab' }); }; });
+$('#reset-chat').onclick = () => { stopConvo(); history = []; $('#cap-user').hidden = true; $('#cap-agent').hidden = true; $('#start-btn').hidden = false; log('brain', 'Started a new conversation'); };
+
+$('#test-brain').onclick = async () => {
+  const out = $('#test-result');
+  out.textContent = 'Testing...';
+  try {
+    const raw = await think([{ role: 'system', content: 'Reply with exactly: [happy] Ready.' }, { role: 'user', content: 'Are you there?' }]);
+    out.textContent = `Working: ${parseReply(raw).text}`;
+    log('brain', 'Test call succeeded');
+  } catch (err) {
+    out.textContent = friendlyError(err);
+    log('brain', `Test failed: ${friendlyError(err)}`, true);
+  }
+};
+
+/* ================= Stage UI ================= */
+function setState(s) {
+  if (s === 'idle' && listening) s = cfg.listenMode === 'wake' ? 'wake' : 'listening';
+  const chip = $('#state-chip');
+  chip.dataset.state = s;
+  chip.textContent = { idle: 'Idle', listening: 'Listening', wake: `Listening for "${wakeWord()}"`, thinking: 'Thinking', speaking: 'Speaking' }[s];
+}
+function showUser(text) { const el = $('#cap-user'); el.hidden = !text; el.textContent = text; }
+function showAgent(text, isErr = false) { const el = $('#cap-agent'); el.hidden = false; el.textContent = text; el.classList.toggle('err', isErr); }
+
+function updateKeyBtn() {
+  const studioHidden = document.body.classList.contains('present') || document.body.classList.contains('embed');
+  $('#key-btn').hidden = !(studioHidden && needsKey());
+}
+function setPresent(on) {
+  document.body.classList.toggle('present', on);
+  $('#present-btn').textContent = on ? 'Show studio' : 'Hide studio';
+  updateKeyBtn();
+  requestAnimationFrame(resize);
+}
+$('#present-btn').onclick = () => setPresent(!document.body.classList.contains('present'));
+$('#present-btn-2').onclick = () => setPresent(true);
+
+/* Key dialog (mainly for exported demos, where the studio panel is hidden) */
+function openKeyDialog() {
+  $('#kd-provider').value = ['groq', 'claude', 'openai'].includes(cfg.provider) ? cfg.provider : 'gemini';
+  $('#kd-key').value = keyFor($('#kd-provider').value);
+  $('#key-dialog').hidden = false;
+  $('#kd-key').focus();
+}
+$('#key-btn').onclick = openKeyDialog;
+$('#kd-provider').onchange = () => { $('#kd-key').value = keyFor($('#kd-provider').value); };
+$('#kd-save').onclick = () => {
+  const p = $('#kd-provider').value, k = $('#kd-key').value.trim();
+  if (!k) { $('#kd-key').focus(); return; }
+  setKey(p, k);
+  cfg.provider = p; cfg.model = '';
+  syncFields(); saveCfg(); updateKeyBtn();
+  $('#key-dialog').hidden = true;
+  log('brain', `Key added for ${PROVIDERS[p].label}`);
+};
+$('#kd-rehearse').onclick = () => {
+  cfg.provider = 'rehearsal';
+  syncFields(); saveCfg(); updateKeyBtn();
+  $('#key-dialog').hidden = true;
+};
+$('#key-dialog').addEventListener('click', (e) => { if (e.target.id === 'key-dialog') $('#key-dialog').hidden = true; });
+
+/* Tabs */
+$$('.tab').forEach((tab) => {
+  tab.onclick = () => {
+    $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+    $$('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab.dataset.tab; });
+  };
+});
+
+/* Form bindings */
+function syncFields() {
+  $$('[data-cfg]').forEach((el) => {
+    const k = el.dataset.cfg;
+    if (el.type === 'checkbox') el.checked = !!cfg[k];
+    else el.value = cfg[k] ?? '';
+  });
+  $('#agent-name').textContent = cfg.name || 'Agent';
+  $('#rate-val').textContent = `${Number(cfg.rate).toFixed(2)}x`;
+  $('#pitch-val').textContent = Number(cfg.pitch).toFixed(2);
+  $('#f-gkey').value = keyFor('gemini');
+  syncProvider();
+  syncVoiceSource();
+  $('#listenmode-hint').textContent = LISTEN_HINTS[cfg.listenMode] || '';
+  $$('#ar-size button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === cfg.arSize)));
+  updateMic();
+  updateKeyBtn();
+  refreshPrompt();
+}
+function syncProvider() {
+  const p = cfg.provider;
+  $('#key-block').hidden = p === 'rehearsal';
+  $('#rehearsal-note').hidden = p !== 'rehearsal';
+  $('#url-field').hidden = p !== 'custom';
+  if (p !== 'rehearsal') {
+    $('#f-key').value = keyFor(p);
+    $('#key-hint').textContent = `${PROVIDERS[p].keyHint} The key is stored only in this browser.`;
+    $('#f-model').placeholder = PROVIDERS[p].model || 'model-name';
+  }
+  $('#test-result').textContent = '';
+}
+function syncVoiceSource() {
+  const g = cfg.voiceSource === 'gemini';
+  $('#gemini-voice').hidden = !g;
+  $('#browser-voice').hidden = g;
+}
+$('#f-gvoice').innerHTML = GEMINI_VOICES.map((v) => `<option value="${v}">${v}</option>`).join('');
+$$('[data-cfg]').forEach((el) => {
+  const k = el.dataset.cfg;
+  el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'color' ? 'change' : 'input', () => {
+    cfg[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? Number(el.value) : el.value;
+    if (k === 'provider') { cfg.model = ''; $('#f-model').value = ''; syncProvider(); updateKeyBtn(); }
+    if (k === 'name') { $('#agent-name').textContent = cfg.name || 'Agent'; updateMic(); }
+    if (k === 'rate') $('#rate-val').textContent = `${Number(cfg.rate).toFixed(2)}x`;
+    if (k === 'pitch') $('#pitch-val').textContent = Number(cfg.pitch).toFixed(2);
+    if (k === 'bgColor') applyBackdrop();
+    if (k === 'voiceSource') syncVoiceSource();
+    if (k === 'listenLang') loadVoices();
+    if (k === 'listenMode') { stopConvo(); pauseEars(); $('#listenmode-hint').textContent = LISTEN_HINTS[cfg.listenMode]; updateMic(); setState('idle'); }
+    if (['bodyColor', 'skinColor', 'hairColor', 'eyeColor'].includes(k)) avatar?.recolor?.();
+    refreshPrompt();
+    saveCfg();
+  });
+  if (el.type === 'color') el.addEventListener('input', () => {
+    cfg[k] = el.value;
+    if (k === 'bgColor') applyBackdrop(); else avatar?.recolor?.();
+  });
+});
+$('#f-key').addEventListener('input', (e) => { setKey(cfg.provider, e.target.value); if (cfg.provider === 'gemini') $('#f-gkey').value = e.target.value.trim(); updateKeyBtn(); });
+$('#f-gkey').addEventListener('input', (e) => { setKey('gemini', e.target.value); if (cfg.provider === 'gemini') $('#f-key').value = e.target.value.trim(); updateKeyBtn(); });
+$('#f-voice').addEventListener('change', (e) => { cfg.voiceName = e.target.value; saveCfg(); });
+$('#test-voice').onclick = () => {
+  getAudio();
+  setEmotion('happy');
+  showAgent(cfg.greeting);
+  speak(cfg.greeting, 'happy').then(() => setEmotion('neutral'));
+};
+$$('#framing button').forEach((b) => { b.onclick = () => { cfg.framing = b.dataset.v; frame(); saveCfg(); }; });
+$$('#ar-size button').forEach((b) => { b.onclick = () => { cfg.arSize = b.dataset.v; syncFields(); saveCfg(); }; });
+
+/* Avatar gallery, picker and drag-and-drop */
+$$('.pick').forEach((b) => {
+  b.onclick = () => {
+    if (b.dataset.pick === 'own') { $('#avatar-file').click(); return; }
+    useStarter(b.dataset.pick);
+  };
+});
+$('#avatar-file').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (f) loadAvatarBlob(f, f.name);
+  e.target.value = '';
+});
+const stageEl = $('#stage');
+let dragDepth = 0;
+stageEl.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; $('#drop-hint').hidden = false; });
+stageEl.addEventListener('dragover', (e) => e.preventDefault());
+stageEl.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#drop-hint').hidden = true; } });
+stageEl.addEventListener('drop', (e) => {
+  e.preventDefault(); dragDepth = 0; $('#drop-hint').hidden = true;
+  const f = [...(e.dataTransfer?.files || [])].find((x) => /\.(vrm|glb)$/i.test(x.name));
+  if (f) loadAvatarBlob(f, f.name);
+});
+
+/* ================= Camera view (any phone or laptop) ================= */
+let camStream = null;
+async function setCamera(on) {
+  const video = $('#cam-video');
+  if (on) {
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      video.srcObject = camStream;
+      video.hidden = false;
+      await video.play();
+      camOn = true;
+      if (cfg.framing !== 'full') { cfg.framing = 'full'; frame(); }
+      log('stage', 'Camera view on');
+    } catch (err) {
+      log('stage', `Camera view needs camera permission (${err.name || err.message}).`, true);
+      showAgent('I could not open the camera. Allow camera access in the address bar and try again.', true);
+      camOn = false;
+    }
+  } else {
+    camStream?.getTracks().forEach((t) => t.stop());
+    camStream = null;
+    video.srcObject = null;
+    video.hidden = true;
+    camOn = false;
+    log('stage', 'Camera view off');
+  }
+  $('#cam-btn').setAttribute('aria-pressed', String(camOn));
+  applyBackdrop();
+}
+$('#cam-btn').onclick = () => setCamera(!camOn);
+
+/* ================= AR on Android (WebXR) ================= */
+async function checkAR() {
+  try {
+    if (navigator.xr && await navigator.xr.isSessionSupported('immersive-ar')) $('#ar-btn').hidden = false;
+  } catch { /* not supported */ }
+}
+async function startAR() {
+  if (camOn) await setCamera(false);
+  try {
+    const session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: stageEl },
+    });
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType('local');
+    await renderer.xr.setSession(session);
+    xrActive = true;
+    placed = false;
+    document.body.classList.add('xr');
+    controls.enabled = false;
+    applyBackdrop();
+    avatar.root.visible = false;
+    $('#ar-hint').hidden = false;
+    $('#ar-btn').textContent = 'Exit AR';
+    const viewer = await session.requestReferenceSpace('viewer');
+    hitSource = await session.requestHitTestSource({ space: viewer });
+    session.addEventListener('select', placeAvatar);
+    session.addEventListener('end', endAR);
+    log('stage', `AR started (${cfg.arSize === 'table' ? 'tabletop' : 'life size'})`);
+  } catch (err) {
+    log('stage', `AR could not start: ${err.message}`, true);
+    showAgent('AR could not start on this device. Try camera view instead.', true);
+  }
+}
+function placeAvatar() {
+  if (!reticle.visible || !avatar) return;
+  const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+  const viewerPos = new THREE.Vector3().setFromMatrixPosition(renderer.xr.getCamera().matrixWorld);
+  avatar.root.position.copy(pos);
+  avatar.root.rotation.set(0, Math.atan2(viewerPos.x - pos.x, viewerPos.z - pos.z), 0);
+  avatar.root.scale.setScalar(cfg.arSize === 'table' ? 0.22 : 1);
+  avatar.root.visible = true;
+  if (!placed) { placed = true; $('#ar-hint').hidden = true; greetGesture(); log('stage', 'Agent placed in the room'); }
+}
+function endAR() {
+  hitSource?.cancel?.();
+  hitSource = null;
+  xrActive = false;
+  renderer.xr.enabled = false;
+  document.body.classList.remove('xr');
+  controls.enabled = true;
+  reticle.visible = false;
+  $('#ar-hint').hidden = true;
+  $('#ar-btn').textContent = 'View in AR';
+  if (avatar) {
+    avatar.root.position.set(0, 0, 0);
+    avatar.root.rotation.set(0, 0, 0);
+    avatar.root.scale.setScalar(1);
+    avatar.root.visible = true;
+  }
+  applyBackdrop();
+  resize();
+  frame();
+  log('stage', 'AR ended');
+}
+$('#ar-btn').onclick = () => { if (xrActive) renderer.xr.getSession()?.end(); else startAR(); };
+// Taps on the on-screen controls should not also place the agent
+['#stage-top', '#stage-bottom'].forEach((s) => $(s).addEventListener('beforexrselect', (e) => e.preventDefault()));
+
+/* ================= Save, open and export ================= */
+function download(name, blob) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const slug = () => (cfg.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
+function blobToDataURL(blob) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+}
+async function projectPayload() {
+  const payload = { app: 'embodied-agent-studio', version: 2, config: { ...cfg }, avatar: null };
+  if (avatarSource) payload.avatar = { name: avatarSource.name, data: await blobToDataURL(avatarSource.blob) };
+  return payload;
+}
+const mb = (n) => (n / 1048576).toFixed(1);
+
+$('#save-json').onclick = async () => {
+  const json = JSON.stringify(await projectPayload());
+  download(`${slug()}-project.json`, new Blob([json], { type: 'application/json' }));
+  log('stage', `Saved ${slug()}-project.json (${mb(json.length)} MB${avatarSource ? ', avatar included' : ''})`);
+};
+$('#load-json').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    cfg = { ...DEFAULTS, ...(j.config || j) };
+    syncFields(); applyBackdrop(); loadVoices(); saveCfg();
+    if (j.avatar?.data) {
+      const blob = await (await fetch(j.avatar.data)).blob();
+      await loadAvatarBlob(blob, j.avatar.name);
+    } else {
+      await useStarter(cfg.starter || 'mascot');
+    }
+    log('stage', `Opened ${f.name}`);
+  } catch (err) {
+    log('stage', `${f.name} is not a project file (${err.message})`, true);
+  }
+});
+
+$('#export-demo').onclick = async () => {
+  const btn = $('#export-demo');
+  btn.disabled = true; btn.textContent = 'Building the demo file...';
+  try {
+    const json = JSON.stringify(await projectPayload()).replace(/</g, '\\u003c');
+    const base = SOURCE_HTML.replace(/<script id="embedded-agent"[\s\S]*?<\/script>\n?/, '');
+    const html = base.replace('</head>', `<script id="embedded-agent" type="application/json">${json}<\/script>\n</head>`);
+    download(`${slug()}-demo.html`, new Blob([html], { type: 'text/html' }));
+    const size = html.length;
+    log('stage', `Exported ${slug()}-demo.html (${mb(size)} MB)`);
+    $('#export-note').textContent = size > 25 * 1048576
+      ? `The demo is ${mb(size)} MB, over GitHub's 25 MB web upload limit. Use Netlify Drop, or export your avatar with smaller textures.`
+      : `The demo is ${mb(size)} MB. If nothing downloaded, you are in a preview: open the hosted studio instead.`;
+  } catch (err) {
+    log('stage', `Export failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Export standalone demo (.html)';
+  }
+};
+
+const demoUrl = (location.protocol.startsWith('http') && !/claude|localhost/.test(location.host)) ? location.origin + location.pathname : 'https://your-name.github.io/your-agent/';
+$('#embed-code').value = `<iframe src="${demoUrl}?embed" width="420" height="640" style="border:0;border-radius:12px" allow="microphone; camera; autoplay; xr-spatial-tracking" title="${cfg.name || 'AI agent'}"></iframe>`;
+$('#copy-embed').onclick = async () => {
+  const ta = $('#embed-code');
+  try { await navigator.clipboard.writeText(ta.value); $('#copy-result').textContent = 'Copied'; }
+  catch { ta.focus(); ta.select(); $('#copy-result').textContent = 'Selected: press Ctrl+C to copy'; }
+};
+
+/* ================= Boot ================= */
+syncFields();
+setAvatar(buildMascot());
+$('#loading').hidden = true;
+resize();
+renderer.setAnimationLoop(tick);
+checkAR();
+log('body', 'Studio ready');
+if (embedded) setPresent(true);
+if (embedded?.avatar?.data) {
+  const blob = await (await fetch(embedded.avatar.data)).blob();
+  await loadAvatarBlob(blob, embedded.avatar.name);
+} else if (cfg.starter === 'robot') {
+  await useStarter('robot');
+}
+updateKeyBtn();
+</script>
+</body>
+</html>
