@@ -357,6 +357,7 @@ details > .guide, details > .lede { margin-top: 4px; }
         <button class="ghost-btn" id="key-btn" type="button" hidden>Add AI key</button>
         <button class="ghost-btn" id="cam-btn" type="button" aria-pressed="false">Camera view</button>
         <button class="ghost-btn" id="ar-btn" type="button" hidden>View in AR</button>
+        <button class="ghost-btn" id="body-btn" type="button" aria-pressed="false" title="Hide the body to compare the agent as text or voice only">Hide body</button>
         <button class="ghost-btn" id="present-btn" type="button">Hide studio</button>
       </div>
     </div>
@@ -2692,6 +2693,14 @@ function setPresent(on) {
   requestAnimationFrame(resize);
 }
 $('#present-btn').onclick = () => setPresent(!document.body.classList.contains('present'));
+// Hide the body for a moment, to compare the same agent as text only, voice only and embodied.
+// The brain, voice and captions keep working; only what you see changes. Not saved with the project.
+$('#body-btn').onclick = () => {
+  holder.visible = !holder.visible;
+  $('#body-btn').textContent = holder.visible ? 'Hide body' : 'Show body';
+  $('#body-btn').setAttribute('aria-pressed', String(!holder.visible));
+  log('body', holder.visible ? 'Body shown' : 'Body hidden: text and voice only');
+};
 $('#present-btn-2').onclick = () => setPresent(true);
 
 /* Key dialog (mainly for exported demos, where the studio panel is hidden) */
