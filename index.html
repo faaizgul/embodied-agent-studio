@@ -162,10 +162,13 @@ body.xr #canvas-wrap, body.xr #cam-video { visibility: hidden; }
   background: rgba(10,16,22,0.75); border: 1px solid rgba(255,255,255,0.14);
   border-radius: 14px; padding: 6px;
 }
-.composer input {
-  min-width: 0; border: 0; background: transparent; color: var(--stage-fg); padding: 9px 6px; outline: none;
+/* Typing box: dark text on a light field, the same in light and dark mode. The selector names the
+   type so it wins over the general text-field style further down. */
+.composer input[type="text"] {
+  min-width: 0; border: 0; border-radius: 9px; background: #f4f6f8; color: #15171c; padding: 9px 10px; outline: none;
 }
-.composer input::placeholder { color: rgba(238,243,248,0.5); }
+.composer input[type="text"]:focus { box-shadow: 0 0 0 2px var(--speak); }
+.composer input[type="text"]::placeholder { color: #5f6873; }
 .mic {
   width: 42px; height: 42px; border-radius: 50%; border: 0; cursor: pointer;
   background: rgba(255,255,255,0.12); color: var(--stage-fg);
