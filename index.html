@@ -1649,16 +1649,21 @@ function gestureForReply(emotion, text, tagged) {
 
 let avatar = null;
 let avatarSource = null; // { name, blob } of a loaded avatar file, for saving and export
+/* The body sits inside a holder. In AR only the holder moves, so each body keeps its own
+   feet-on-the-floor offset and the anchor pose never overwrites it. */
+const holder = new THREE.Group();
+holder.name = 'avatar-holder';
+scene.add(holder);
 function setAvatar(next) {
-  if (avatar) { scene.remove(avatar.root); avatar.dispose?.(); }
+  if (avatar) { avatar.root.removeFromParent(); avatar.dispose?.(); }
   avatar = next;
-  scene.add(avatar.root);
+  holder.add(avatar.root);
   gest.cur = null; showGestureChip('');
   gest.arms.L = newArmState(); gest.arms.R = newArmState();
   prepareRig(avatar);
   updateBehaviourNote();
   refreshPrompt();
-  if (xrActive) avatar.root.visible = false;
+  if (xrActive && !placed) avatar.root.visible = false;
   frame();
   $('#avatar-kind').textContent = { builtin: 'Built-in, stylised', robot: 'Built-in, non-human', vrm: 'Your VRM avatar', glb: 'Your GLB avatar' }[avatar.kind];
   $('#avatar-fname').textContent = avatar.label;
@@ -1769,7 +1774,8 @@ function audioLevel() {
 }
 
 /* ================= AR (Android WebXR) state ================= */
-let hitSource = null, placed = false;
+let hitSource = null, placed = false, lastHit = null, arAnchor = null;
+const _arUp = new THREE.Vector3(), _arPos = new THREE.Vector3(), _arQ = new THREE.Quaternion(), _arS = new THREE.Vector3();
 const reticle = new THREE.Mesh(
   new THREE.RingGeometry(0.12, 0.15, 40).rotateX(-Math.PI / 2),
   new THREE.MeshBasicMaterial({ color: 0x4cc3cc })
@@ -1814,12 +1820,22 @@ function tick(time, xrFrame) {
 
   if (xrActive && xrFrame && hitSource) {
     const refSpace = renderer.xr.getReferenceSpace();
-    const hits = xrFrame.getHitTestResults(hitSource);
-    if (hits.length) {
-      const pose = hits[0].getPose(refSpace);
-      reticle.visible = true;
+    // Only accept flat, floor-like surfaces: a spot on a wall or a sloping guess makes the agent drift.
+    lastHit = null;
+    for (const hit of xrFrame.getHitTestResults(hitSource)) {
+      const pose = hit.getPose(refSpace);
+      if (!pose) continue;
       reticle.matrix.fromArray(pose.transform.matrix);
-    } else reticle.visible = false;
+      reticle.matrix.decompose(_arPos, _arQ, _arS);
+      if (_arUp.set(0, 1, 0).applyQuaternion(_arQ).y > 0.9) { lastHit = hit; break; }
+    }
+    reticle.visible = !!lastHit;
+    // Keep the agent pinned to its anchor. ARCore refines its map of the room as you move,
+    // and the anchor moves with that map, so the agent stays on the same spot of floor.
+    if (arAnchor && placed) {
+      const ap = xrFrame.getPose(arAnchor.anchorSpace, refSpace);
+      if (ap) holder.position.set(ap.transform.position.x, ap.transform.position.y, ap.transform.position.z);
+    }
   }
   if (!xrActive) controls.update();
   renderer.render(scene, camera);
@@ -1898,7 +1914,7 @@ function speakBrowser(text) {
 
 /* Gemini voice (text to speech) */
 let ttsRoute = null; // 'interactions' or 'generate', learned on first success
-let geminiVoiceCooldown = 0;
+let geminiVoiceCooldown = 0, geminiVoice429 = 0;
 class VoiceError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
 async function errorFrom(res) {
   let detail = '';
@@ -2077,10 +2093,17 @@ async function speak(text, emotion = 'neutral') {
     } else if (cfg.voiceSource === 'gemini' && Date.now() > geminiVoiceCooldown && keyFor('gemini')) {
       try {
         await speakGemini(text, emotion);
+        geminiVoice429 = 0;
       } catch (err) {
         const why = err.status === 429 ? 'The free voice limit is reached.' : err.status === 401 || err.status === 403 ? 'The Gemini key was not accepted.' : err.status === 0 ? err.message : `Gemini voice error: ${err.message}`;
         log('voice', `${why} Using the browser voice for now.`, true);
-        if (err.status === 429) geminiVoiceCooldown = Date.now() + 60000;
+        // A short rest the first time; if the limit is hit again, it is probably the daily limit,
+        // so stop asking (each refused request only adds delay before the browser voice speaks).
+        if (err.status === 429) {
+          geminiVoice429++;
+          geminiVoiceCooldown = Date.now() + (geminiVoice429 >= 2 ? 30 * 60000 : 60000);
+          if (geminiVoice429 >= 2) log('voice', 'The Gemini voice limit looks used up for today. The browser voice will speak for the next 30 minutes. The brain is not affected.', true);
+        }
         if (speaking) await speakBrowser(text);
       }
     } else {
@@ -2170,6 +2193,24 @@ const pauseMs = () => (Number(cfg.endPause) || 1) * 1000;
 
 /* Turn-taking: the browser is slow to decide that you have finished a sentence, so the studio
    decides itself. When the words stop changing for the chosen pause, the turn is over. */
+/* Join speech results into one transcript. Desktop Chrome sends separate pieces of a sentence
+   ("I'm looking" + " for a book"). Chrome on Android instead resends the whole sentence so far
+   in every piece ("I'm", "I'm looking", "I'm looking for"), so a plain join repeats it. A piece
+   that repeats or extends what we already have replaces it instead of being added. */
+function joinResults(results, from = 0) {
+  const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  let text = '';
+  for (let i = from; i < results.length; i++) {
+    const piece = results[i][0].transcript;
+    const p = norm(piece), t = norm(text);
+    if (!p) continue;
+    if (!t || p.startsWith(t)) text = piece;            // the same sentence, grown longer
+    else if (t.endsWith(p) || t.startsWith(p)) continue; // a repeat of what we have
+    else text += (/\s$/.test(text) || /^\s/.test(piece) ? '' : ' ') + piece;
+  }
+  return text;
+}
+
 function listenOnce() {
   if (!SR || busy) return;
   stopSpeaking();
@@ -2202,8 +2243,7 @@ function listenOnce() {
   };
   rec.onresult = (e) => {
     if (id !== recId) return;
-    let t = '';
-    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+    const t = joinResults(e.results);
     text = t;
     showUser(t);
     clearTimeout(quietTimer);
@@ -2277,8 +2317,7 @@ function listenWake() {
   rec.onresult = (e) => {
     if (id !== recId) return;
     count = e.results.length;
-    let t = '';
-    for (let i = from; i < e.results.length; i++) t += e.results[i][0].transcript;
+    const t = joinResults(e.results, from);
     text = t;
     if (findName(t)) showUser(t);
     clearTimeout(quietTimer);
@@ -2823,7 +2862,7 @@ async function startAR() {
   try {
     const session = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['hit-test'],
-      optionalFeatures: ['dom-overlay'],
+      optionalFeatures: ['dom-overlay', 'anchors'],
       domOverlay: { root: stageEl },
     });
     renderer.xr.enabled = true;
@@ -2848,18 +2887,39 @@ async function startAR() {
   }
 }
 function placeAvatar() {
-  if (!reticle.visible || !avatar) return;
+  if (!reticle.visible || !lastHit || !avatar) return;
   const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
   const viewerPos = new THREE.Vector3().setFromMatrixPosition(renderer.xr.getCamera().matrixWorld);
-  avatar.root.position.copy(pos);
-  avatar.root.rotation.set(0, Math.atan2(viewerPos.x - pos.x, viewerPos.z - pos.z), 0);
-  avatar.root.scale.setScalar(cfg.arSize === 'table' ? 0.22 : 1);
+  holder.position.copy(pos);
+  holder.rotation.set(0, Math.atan2(viewerPos.x - pos.x, viewerPos.z - pos.z), 0);
+  holder.scale.setScalar(cfg.arSize === 'table' ? 0.22 : 1);
   avatar.root.visible = true;
-  if (!placed) { placed = true; $('#ar-hint').hidden = true; greetGesture(); log('stage', 'Agent placed in the room'); }
+  // Pin the agent to a real-world anchor where the phone supports it (most ARCore phones).
+  arAnchor?.delete?.();
+  arAnchor = null;
+  const hit = lastHit;
+  if (hit.createAnchor) {
+    hit.createAnchor().then((a) => {
+      if (!xrActive) { a.delete?.(); return; }
+      arAnchor?.delete?.();
+      arAnchor = a;
+    }).catch((err) => log('stage', `Could not anchor the agent (${err.message}). It may drift a little.`));
+  }
+  if (!placed) {
+    placed = true;
+    $('#ar-hint').textContent = 'Tap the floor again to move the agent.';
+    setTimeout(() => { if (placed) $('#ar-hint').hidden = true; }, 3000);
+    greetGesture();
+    log('stage', `Agent placed in the room${hit.createAnchor ? ', anchored to the floor' : ''}`);
+  }
 }
 function endAR() {
   hitSource?.cancel?.();
   hitSource = null;
+  arAnchor?.delete?.();
+  arAnchor = null;
+  lastHit = null;
+  placed = false;
   xrActive = false;
   renderer.xr.enabled = false;
   document.body.classList.remove('xr');
@@ -2867,12 +2927,11 @@ function endAR() {
   reticle.visible = false;
   $('#ar-hint').hidden = true;
   $('#ar-btn').textContent = 'View in AR';
-  if (avatar) {
-    avatar.root.position.set(0, 0, 0);
-    avatar.root.rotation.set(0, 0, 0);
-    avatar.root.scale.setScalar(1);
-    avatar.root.visible = true;
-  }
+  holder.position.set(0, 0, 0);
+  holder.rotation.set(0, 0, 0);
+  holder.scale.setScalar(1);
+  $('#ar-hint').textContent = 'Move your phone slowly to find the floor, then tap to place the agent.';
+  if (avatar) avatar.root.visible = true;
   applyBackdrop();
   resize();
   frame();
